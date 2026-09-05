@@ -39,6 +39,20 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Check Demo UI structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e android/demo/src/main/java/com/lxw112190/ppocr/demo/OcrResultAdapter.kt
+          grep -Fq 'android:id="@+id/result_container"' \
+            android/demo/src/main/res/layout/activity_main.xml
+          ! grep -R -n -E 'RecyclerView|result_list|OcrResultAdapter' \
+            android/demo/src/main android/demo/build.gradle.kts
+          grep -Fq 'android:label="@string/app_name"' \
+            android/demo/src/main/AndroidManifest.xml
+          grep -Fq 'android:label="@string/app_name"' \
+            android/demo-java/src/main/AndroidManifest.xml
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

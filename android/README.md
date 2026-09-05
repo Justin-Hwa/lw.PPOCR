@@ -56,6 +56,12 @@ CLS 和阅读顺序后点击“开始识别”；识别框可在预览区显示�
 UTF-8 TXT 或 schema_version=1 的 JSON。Demo 只使用系统 Photo Picker 和
 CreateDocument，不申请相机或存储权限。
 
+Kotlin Demo 首页品牌为 `lw.PPOCR.C`，应用名称为
+`lw.PPOCR.C Android Preview`；Java Demo 使用 `lw.PPOCR.C Java Demo`。Kotlin
+Demo 的结果行直接放在页面唯一的 `ScrollView` 内，不再嵌套不可滚动的
+`RecyclerView`，因此结果区会随页面完整展开，适合 Redmi/HyperOS 以及大字体、
+大显示尺寸设置。每次识别都会重新生成结果行，点击任意一行仍会高亮对应检测框。
+
 支持的阅读顺序为 `HORIZONTAL_LTR`（标准横排）、`VERTICAL_RTL`（古籍竖排，
 右到左）和 `VERTICAL_LTR`（竖排，左到右）。阅读顺序可以在同一个 Engine
 上运行时修改；CLS 设置改变时 Demo 会在下一次识别前重新创建 Engine。

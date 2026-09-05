@@ -13,7 +13,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="lw.PPOCR Java Demo"
+            android:text="@string/app_title"
             android:textColor="#102A43"
             android:textSize="22sp"
             android:textStyle="bold" />
@@ -22,7 +22,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Android ARM64 · 离线 OCR · Java Blocking API"
+            android:text="@string/app_subtitle"
             android:textColor="#52606D"
             android:textSize="13sp" />
 

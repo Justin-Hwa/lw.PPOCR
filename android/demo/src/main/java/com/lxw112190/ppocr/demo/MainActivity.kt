@@ -18,15 +18,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.lxw112190.ppocr.LwPpocrEngine
+import com.lxw112190.ppocr.OcrLine
 import com.lxw112190.ppocr.OcrOptions
 import com.lxw112190.ppocr.OcrResult
 import com.lxw112190.ppocr.ReadingOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private enum class UiState {
@@ -65,8 +65,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var copyButton: Button
     private lateinit var shareButton: Button
     private lateinit var moreButton: Button
-    private lateinit var resultList: RecyclerView
-    private lateinit var resultAdapter: OcrResultAdapter
+    private lateinit var resultContainer: android.widget.LinearLayout
+    private var selectedResultIndex: Int? = null
 
     private val blue = android.graphics.Color.rgb(21, 101, 192)
     private val green = android.graphics.Color.rgb(0, 137, 123)
@@ -111,14 +111,7 @@ class MainActivity : ComponentActivity() {
         copyButton = findViewById(R.id.copy_button)
         shareButton = findViewById(R.id.share_button)
         moreButton = findViewById(R.id.more_button)
-        resultList = findViewById(R.id.result_list)
-
-        resultAdapter = OcrResultAdapter { index ->
-            preview.setSelectedLine(index)
-        }
-        resultList.layoutManager = LinearLayoutManager(this)
-        resultList.adapter = resultAdapter
-        resultList.isNestedScrollingEnabled = false
+        resultContainer = findViewById(R.id.result_container)
 
         readingOrder.adapter = ArrayAdapter(
             this,
@@ -235,7 +228,8 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { result ->
                 currentResult = result
                 preview.setResult(result)
-                resultAdapter.submitList(result.lines)
+                selectedResultIndex = null
+                renderResultLines(result.lines)
                 state = UiState.RESULT_READY
                 renderUiState()
             }.onFailure {
@@ -270,8 +264,8 @@ class MainActivity : ComponentActivity() {
 
     private fun clearCurrentResult() {
         currentResult = null
-        resultAdapter.submitList(emptyList())
-        resultAdapter.setSelectedIndex(null)
+        resultContainer.removeAllViews()
+        selectedResultIndex = null
         preview.clearResult()
         resultEmpty.visibility = View.VISIBLE
         resultMeta.text = if (currentBitmap == null) "等待图片" else "等待识别"
@@ -317,14 +311,71 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun renderResultLines(lines: List<OcrLine>) {
+        resultContainer.removeAllViews()
+        lines.forEach { line ->
+            val item = layoutInflater.inflate(
+                R.layout.item_ocr_line,
+                resultContainer,
+                false,
+            )
+            item.findViewById<TextView>(R.id.line_index).text = String.format(
+                Locale.US,
+                "%02d",
+                line.index + 1,
+            )
+            item.findViewById<TextView>(R.id.line_text).text = line.text
+            item.findViewById<TextView>(R.id.line_scores).text = String.format(
+                Locale.US,
+                "检测 %.1f%% · 识别 %.1f%%",
+                line.detScore * 100f,
+                line.recScore * 100f,
+            )
+            item.tag = line.index
+            item.setOnClickListener { selectResultLine(line.index) }
+            resultContainer.addView(item)
+        }
+        updateResultSelection()
+    }
+
+    private fun selectResultLine(lineIndex: Int) {
+        selectedResultIndex = lineIndex
+        preview.setSelectedLine(lineIndex)
+        updateResultSelection()
+    }
+
+    private fun updateResultSelection() {
+        for (childIndex in 0 until resultContainer.childCount) {
+            val child = resultContainer.getChildAt(childIndex)
+            val lineIndex = child.tag as? Int
+            child.setBackgroundColor(
+                if (lineIndex == selectedResultIndex) {
+                    android.graphics.Color.rgb(231, 240, 251)
+                } else {
+                    android.graphics.Color.TRANSPARENT
+                }
+            )
+        }
+    }
+
     private fun renderExportEnabled() {
-        val enabled = currentResult != null
+        val result = currentResult
+        val enabled = result != null
         copyButton.isEnabled = enabled
         shareButton.isEnabled = enabled
         moreButton.isEnabled = enabled
-        resultEmpty.visibility = if (enabled) View.GONE else View.VISIBLE
-        if (enabled) {
-            resultMeta.text = "${currentResult?.lines?.size ?: 0} 行"
+        resultEmpty.visibility = if (result == null || result.lines.isEmpty()) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
+        resultEmpty.text = if (result == null) {
+            "选择一张图片，识别文字会显示在这里。"
+        } else {
+            "未检测到文字。"
+        }
+        if (result != null) {
+            resultMeta.text = "${result.lines.size} 行"
         }
     }
 
