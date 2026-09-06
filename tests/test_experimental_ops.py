@@ -9,9 +9,43 @@ import onnx
 from onnx import TensorProto, helper
 
 from converter.lwm_v0 import OP_IDS, _materialize_slice_inputs, _write_model
+from tools.convert_small_rec_experimental import lower_dynamic_metadata
 
 
 class ExperimentalOperatorEncodingTests(unittest.TestCase):
+    def test_small_dynamic_lowering_removes_only_reshape_metadata(self) -> None:
+        graph = helper.make_graph(
+            [
+                helper.make_node("Shape", ["x"], ["shape"], name="shape"),
+                helper.make_node(
+                    "Reshape", ["x", "shape"], ["y"], name="reshape"
+                ),
+            ],
+            "dynamic-lowering",
+            [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 2, "W"])],
+            [helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 2, "W"])],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+        model.ir_version = 10
+        lowered = lower_dynamic_metadata(model)
+        self.assertEqual([node.op_type for node in lowered.graph.node], ["Reshape"])
+        self.assertEqual(list(lowered.graph.node[0].input), ["x"])
+
+    def test_small_dynamic_lowering_rejects_numeric_metadata_use(self) -> None:
+        graph = helper.make_graph(
+            [
+                helper.make_node("Shape", ["x"], ["shape"], name="shape"),
+                helper.make_node("Add", ["shape", "shape"], ["y"], name="add"),
+            ],
+            "dynamic-lowering-reject",
+            [helper.make_tensor_value_info("x", TensorProto.FLOAT, [1, 2, "W"])],
+            [helper.make_tensor_value_info("y", TensorProto.INT64, [4])],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+        model.ir_version = 10
+        with self.assertRaisesRegex(ValueError, "numeric operator Add"):
+            lower_dynamic_metadata(model)
+
     def test_sub_pow_sqrt_are_encoded_as_zero_parameter_nodes(self) -> None:
         graph = helper.make_graph(
             [

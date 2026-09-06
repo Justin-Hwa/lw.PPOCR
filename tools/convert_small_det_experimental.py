@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "schema_version": 1,
         "tool": "tools/convert_small_det_experimental.py",
-        "status": "analysis-only",
+        "status": "dynamic-analysis-only" if args.dynamic else "analysis-only",
         "model": str(args.model),
         "height": args.height,
         "width": args.width,

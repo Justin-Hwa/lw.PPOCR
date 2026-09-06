@@ -456,6 +456,7 @@ static lw_status resolve_node(lw_session* session, const uint8_t* node, uint64_t
     } else if (op == 16u) {
         uint64_t input_elements = 1u;
         uint64_t output_elements = 1u;
+        int32_t unknown_dimension = -1;
         if (input_count != 1u || output->rank > LW_MAX_DIMS) {
             return shape_fail(error, "Reshape has invalid arity or output rank");
         }
@@ -469,10 +470,25 @@ static lw_status resolve_node(lw_session* session, const uint8_t* node, uint64_t
             input_elements *= (uint32_t)inputs[0]->dimensions[i];
         }
         for (i = 0u; i < rank; ++i) {
+            if (dimensions[i] == -1) {
+                if (unknown_dimension != -1) {
+                    return shape_fail(error, "Reshape has more than one unresolved dimension");
+                }
+                unknown_dimension = (int32_t)i;
+                continue;
+            }
             if (dimensions[i] <= 0 || output_elements > UINT64_MAX / (uint32_t)dimensions[i]) {
                 return shape_fail(error, "Reshape output element count is invalid");
             }
             output_elements *= (uint32_t)dimensions[i];
+        }
+        if (unknown_dimension != -1) {
+            if (output_elements == 0u || input_elements % output_elements != 0u ||
+                input_elements / output_elements > INT32_MAX) {
+                return shape_fail(error, "Reshape unresolved dimension is invalid");
+            }
+            dimensions[unknown_dimension] = (int32_t)(input_elements / output_elements);
+            output_elements = input_elements;
         }
         if (input_elements != output_elements) {
             return shape_fail(error, "Reshape changes the tensor element count");

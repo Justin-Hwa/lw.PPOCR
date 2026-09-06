@@ -315,6 +315,8 @@ HTTP Demo 和正式发布包均不链接、加载或携带 OpenCV。
 ## 进一步阅读
 
 - [架构和兼容性边界](docs/architecture.md)
+- [模型支持状态](docs/supported-models.md)
+- [PP-OCRv6 Small 分析](docs/ppocrv6-small-analysis.md)
 - [公共 C API](docs/c-api.md)
 - [完整 OCR 流程](docs/full-ocr.md)
 - [完整 OCR Golden Corpus](docs/full-ocr-golden-corpus.md)

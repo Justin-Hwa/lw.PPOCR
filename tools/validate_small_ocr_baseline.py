@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -17,6 +18,23 @@ LINE_RE = re.compile(
     r"rotate=(?P<rotation>\d+) \[(?P<box>.*)\]$"
 )
 POINT_RE = re.compile(r"\(([-+0-9.eE]+),([-+0-9.eE]+)\)")
+
+
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_model_identities(baseline: dict[str, object], paths: dict[str, Path]) -> None:
+    models = baseline.get("models")
+    if not isinstance(models, dict):
+        raise SystemExit("baseline is missing model identity metadata")
+    for role, path in paths.items():
+        entry = models.get(role)
+        if not isinstance(entry, dict) or not isinstance(entry.get("sha256"), str):
+            raise SystemExit(f"baseline is missing SHA-256 for {role}")
+        actual = sha256(path)
+        if actual != entry["sha256"]:
+            raise SystemExit(f"{role} SHA-256 mismatch: {actual} != {entry['sha256']}")
 
 
 def main() -> int:
@@ -38,6 +56,15 @@ def main() -> int:
     digest = hashlib.sha256(args.sample.read_bytes()).hexdigest()
     if digest != source:
         raise SystemExit(f"sample SHA-256 mismatch: {digest} != {source}")
+    verify_model_identities(
+        baseline,
+        {
+            "detector": args.detector,
+            "classifier": args.classifier,
+            "recognizer": args.recognizer,
+            "dictionary": args.dictionary,
+        },
+    )
     completed = subprocess.run(
         [
             str(args.ocr),

@@ -84,7 +84,9 @@ without storing a width-specific byte layout.
 
 `-1` is the only dynamic-dimension marker. Constant tensors cannot contain
 dynamic dimensions, and their byte size must exactly equal the overflow-checked
-shape product times the dtype size.
+shape product times the dtype size. During session shape resolution, a Reshape
+output may contain at most one `-1`; the runtime derives that dimension from
+the input element count and rejects ambiguous or inconsistent products.
 
 ## Node record: 72 bytes
 

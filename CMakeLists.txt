@@ -818,7 +818,7 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
         COMMAND "${Python3_EXECUTABLE}" -m unittest -v
                 tests.test_analyze_onnx tests.test_compare_model_analysis
                 tests.test_model_manifest tests.test_probe_rec_shape_metadata
-                tests.test_experimental_ops)
+                tests.test_experimental_ops tests.test_small_ocr_baseline)
     set_tests_properties(model_analysis PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 

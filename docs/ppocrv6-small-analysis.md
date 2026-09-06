@@ -1,7 +1,8 @@
 # PP-OCRv6 Small analysis snapshot
 
-Status: **analysis-only**. This report is not a runtime or release-support
-claim. The Small ONNX files are not bundled in this repository.
+Status: **experimental fixed/dynamic validation only**. This report is not a
+production runtime or release-support claim. The Small ONNX files are not
+bundled in this repository.
 
 The snapshot was produced with `converter/analyze_onnx.py` and compared with
 `tools/compare_model_analysis.py`. The local source assets were the PP-OCRv6
@@ -33,26 +34,42 @@ integer metadata, and emits one LWM file per selected width. The runtime also
 has a portable broadcast-batch MatMul fallback for the attention-shaped
 matrices used by Small REC. The prototype executes successfully at widths 320,
 480, 640, and 960, with output sizes matching ONNX Runtime and finite output
-values. It remains a fixed-width experiment: no dynamic-width LWM contract,
-Small dictionary packaging, C ABI support, Android/WASM integration, or release
-asset is implied.
+values. It remains analysis-only: the dynamic path is a graph-specific
+prototype, not a production dynamic-width LWM contract. No Small dictionary
+packaging, C ABI support, Android/WASM integration, or release asset is
+implied.
 `Pow`/`Sqrt`/`Sub` also have experimental scalar/LWM support, but none of these
-paths are used by a released model. Until the full gate passes, Small remains
-outside C ABI, Android, WASM, and release packages.
+paths are used by a released model. Until the dynamic REC, model contract,
+accuracy, and cross-platform gates pass, Small remains outside the production
+model package, Android, WASM, and release packages.
 
 ## REC metadata probe
 
 `tools/probe_rec_shape_metadata.py` was run against the local Small REC asset
-with widths 320, 480, 640, and 960. ONNX Runtime identified six Shape-derived
+with widths 192, 320, 480, 640, and 960. ONNX Runtime identified six Shape-derived
 metadata nodes; ordinary floating-point Slice nodes were intentionally not
 included. The observed width-dependent values were:
 
 | Input width | sequence width (`Shape.1` / `Shape.3`) | attention width (`Shape.7` / `Shape.13`) | sliced width (`Slice.1`) |
 |---:|---:|---:|---:|
+| 192 | 24 | 24 | 24 |
 | 320 | 40 | 40 | 40 |
 | 480 | 60 | 60 | 60 |
 | 640 | 80 | 80 | 80 |
 | 960 | 120 | 120 | 120 |
+
+`tools/validate_small_rec_dynamic_rule.py` now checks this report as a
+fail-closed converter gate. It requires all five widths, the exact six
+Shape/Slice outputs, and the `input_width / 8` relation. This remains an
+analysis contract only: it does not add Shape execution or dynamic metadata
+to LWM v0.1.
+
+To reproduce the gate after probing an external model:
+
+```bash
+python tools/validate_small_rec_dynamic_rule.py \
+  build/ppocrv6-small-rec-metadata.json
+```
 
 The values follow `input_width / 8` for this graph. This is evidence for a
 REC-specific metadata lowering rule, not a general symbolic-shape engine; the
@@ -65,6 +82,33 @@ nodes, and compared the original and rewritten graph outputs. The maximum
 absolute output difference was `4.77e-7` (with `rtol=1e-4`, `atol=1e-5`). This
 is a successful converter experiment only; it does not prove that a dynamic
 width LWM representation is ready.
+
+## Dynamic-width LWM prototype
+
+The experimental converter now also accepts `--dynamic`. This path removes
+only the six Shape/Slice metadata values when they are used as Reshape control,
+specializes the production batch-one contract, and leaves the width-varying
+tensor axis unresolved. The existing runtime Reshape resolver fills that one
+axis from the concrete input element count; it rejects more than one unresolved
+axis or an inconsistent element count.
+
+Example invocation (the Small ONNX asset is external and is not committed):
+
+```bash
+python tools/convert_small_rec_experimental.py \
+  --model PP-OCRv6_small_rec.onnx \
+  --dynamic \
+  --output build/small-rec-dynamic.lwm \
+  --report build/small-rec-dynamic.json
+```
+
+The same generated LWM file was executed by the C runtime at widths 192, 320,
+480, 640, and 960. All sessions resolved to the expected output shapes and
+matched ONNX Runtime under the existing numerical gate (mean absolute error
+below `1e-6`, fraction above `1e-4` below `1e-4`). This is a dynamic execution
+prototype, not a release model: the Small dictionary, CLS identity, golden
+corpus, cross-platform results, memory budget, and packaging contracts remain
+outstanding.
 
 ## Fixed-width LWM execution gate
 
@@ -84,6 +128,27 @@ Runtime output element count:
 The small non-zero differences are expected from different FP32 accumulation
 orders; this gate is numerical equivalence evidence, not a release-quality
 accuracy or performance claim.
+
+The comparison scripts now support optional hard-gate thresholds. Without
+threshold flags they retain report-only behavior. A CI job can fail closed on
+non-finite output, mean error, or the fraction of elements above a selected
+error threshold, for example:
+
+```bash
+python tools/compare_small_rec_execution.py \
+  --model PP-OCRv6_small_rec.onnx \
+  --output-dir build/small-rec \
+  --error-threshold 1e-4 \
+  --max-mean-abs-error 1e-6 \
+  --max-fraction-over 1e-4
+```
+
+The DET comparison tool accepts the same `--error-threshold`,
+`--max-abs-error`, `--max-mean-abs-error`, and `--max-fraction-over` options.
+Output element counts remain exact requirements in both tools, and NaN/Inf is
+always a failure when a gate is enabled. The current values are numerical
+conversion gates only; they do not promote Small to a supported model or make
+an accuracy claim.
 
 ## Fixed-shape DET execution gate
 
@@ -105,13 +170,19 @@ the production converter keeps its exact Tiny model identity gate, and Small
 DET is not yet a bundled model, public API, Android/WASM asset, or release
 package.
 
+The single dynamic DET LWM prototype was also executed at the same three
+spatial shapes and passed the identical numerical thresholds. Dynamic DET is
+therefore ready for the experimental end-to-end pipeline, but it is not yet a
+production converter feature.
+
 ## Experimental end-to-end OCR
 
-The DET prototype was also emitted with dynamic spatial dimensions using
-`--dynamic`. The existing session shape resolver accepted both 320×320 and
-640×640 inputs. Combined with the fixed-width Small REC prototype at width
-320, the existing `lw-ocr-ppm` pipeline completed on the bundled 500×500
-sample image and returned 16 lines. The first lines were:
+The DET prototype was emitted with dynamic spatial dimensions using `--dynamic`,
+and the REC prototype now uses the same dynamic LWM path. The existing session
+shape resolver accepted the DET graph at 320×320 and 640×640, and the REC graph
+at all five target widths. Combined with the temporary released Tiny CLS model,
+the existing `lw-ocr-ppm` pipeline completed on the bundled 500×500 sample
+image and returned 16 lines. The first lines were:
 
 ```text
 纯臻营养护发素
@@ -119,6 +190,26 @@ sample image and returned 16 lines. The first lines were:
 (45元/每公斤，100公斤起订)
 每瓶22元，1000瓶起订)
 ```
+
+The reproducible experiment uses the external Small DET/REC models and their
+matching dictionary, plus the released Tiny CLS model:
+
+```bash
+python tools/convert_small_det_experimental.py \
+  --model PP-OCRv6_small_det.onnx --height 640 --width 640 --dynamic \
+  --output build/small-det-dynamic.lwm
+python tools/convert_small_rec_experimental.py \
+  --model PP-OCRv6_small_rec.onnx --dynamic \
+  --output build/small-rec-dynamic.lwm
+build/Release/lw-ocr-ppm \
+  build/small-det-dynamic.lwm build/models/cls.lwm \
+  build/small-rec-dynamic.lwm PP-OCRv6_small_rec_dict.txt \
+  build/models/sample.ppm 320
+```
+
+This is a pipeline compatibility check, not an accuracy benchmark: the
+temporary Tiny CLS asset and the Small dictionary/model contract still require
+their own identity, golden-corpus, and cross-platform release gates.
 
 The experiment used the released Tiny CLS model only to exercise the
 orientation-classification stage, while DET/REC and the dictionary came from
@@ -162,4 +253,50 @@ generated sample baseline remains outside the repository build tree for now;
 future real-image cases can be appended without changing the production Tiny
 corpus or release artifacts.
 `tools/validate_small_ocr_baseline.py` replays the same model set and checks
+the sample SHA-256, all four model/dictionary SHA-256 identities, 16-line text
+ordering, boxes, classification metadata, and score stability. The current
+dynamic DET/REC baseline replay completed successfully on the local Windows
+x64 build; its JSON remains an ignored build artifact.
 all 16 lines, text, boxes, classification metadata, and score stability.
+
+## Deterministic OCR scene set
+
+For local experiments, `tools/generate_ocr_test_scenes.py` creates six
+copyright-free, deterministic raster scenes with a UTF-8 manifest containing
+the source strings and layout metadata. The set covers a clean receipt, dense
+mixed Chinese/Latin text, low contrast, rotated blocks, sparse layout, and
+long lines. PNG files are convenient for visual inspection; PPM copies can be
+fed directly to the dependency-free OCR executable:
+
+```bash
+python tools/generate_ocr_test_scenes.py \
+  --output-dir build-model-foundation/ocr-scenes
+```
+
+Run the complete suite and write a machine-readable summary with:
+
+```bash
+python tools/run_ocr_scene_suite.py \
+  --manifest build-model-foundation/ocr-scenes/manifest.json \
+  --ocr build/Release/lw-ocr-ppm \
+  --detector build-model-foundation/ppocrv6-small-det-dynamic.lwm \
+  --classifier build/models/cls.lwm \
+  --recognizer build-model-foundation/ppocrv6-small-rec-dynamic.lwm \
+  --dictionary PP-OCRv6_small_rec_dict.txt \
+  --rec-max-width 960
+```
+
+The runner writes `scene-suite-results.json` beside the manifest and exits
+non-zero for a process failure, malformed quadrilateral, non-finite score, or
+empty detection result. It deliberately reports recognized text instead of
+requiring exact strings, so experimental model comparisons remain useful.
+
+The generated directory is a build artifact and is intentionally not part of
+the release package. On the local Windows x64 build, the dynamic Small
+DET/REC pipeline completed all six scenes with finite scores; the rotated,
+sparse, and long-line scenes each produced the expected five OCR regions.
+Receipt and dense-layout scenes intentionally contain multiple adjacent
+regions, so their detector line counts are higher than the logical source-line
+count in the manifest. The generator auto-detects Microsoft YaHei, Noto CJK,
+WenQuanYi, and PingFang candidates; use `--font /path/to/font.ttc` when a CI
+image does not provide one of these fonts.

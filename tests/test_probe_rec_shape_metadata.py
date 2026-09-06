@@ -8,6 +8,7 @@ import onnx
 from onnx import TensorProto, helper
 
 from tools.probe_rec_shape_metadata import metadata_nodes, staticize
+from tools.validate_small_rec_dynamic_rule import validate_report
 
 
 class RecShapeMetadataProbeTests(unittest.TestCase):
@@ -49,6 +50,73 @@ class RecShapeMetadataProbeTests(unittest.TestCase):
             self.assertEqual(report["materialized_outputs"]["shape"], [1, 1, 1, 2])
             self.assertEqual(report["max_abs_error"], 0.0)
             self.assertTrue(output_path.is_file())
+
+    def test_small_dynamic_rule_accepts_all_required_widths(self) -> None:
+        widths = [192, 320, 480, 640, 960]
+        report = {
+            "schema_version": 1,
+            "input": {"base_shape": [1, 3, 48, 1], "widths": widths},
+            "metadata_nodes": [
+                {"op": "Shape", "outputs": [name]}
+                for name in ("Shape.1", "Shape.3", "Shape.7", "Shape.13")
+            ]
+            + [
+                {"op": "Slice", "outputs": [name]}
+                for name in ("Slice.1", "helper.slice.0")
+            ],
+            "probes": [],
+        }
+        for width in widths:
+            report["probes"].append(
+                {
+                    "width": width,
+                    "input_shape": [1, 3, 48, width],
+                    "metadata": {
+                        "Shape.1": [1, 120, 1, width // 8],
+                        "Shape.3": [1, 120, 1, width // 8],
+                        "Shape.7": [1, 8, width // 8, 15],
+                        "Shape.13": [1, 8, width // 8, 15],
+                        "Slice.1": [width // 8],
+                        "helper.slice.0": [1, 120],
+                    },
+                }
+            )
+        summary = validate_report(report)
+        self.assertEqual(summary["status"], "validated-analysis-only")
+        self.assertEqual(summary["probed_widths"], widths)
+
+    def test_small_dynamic_rule_rejects_wrong_ratio(self) -> None:
+        widths = [192, 320, 480, 640, 960]
+        report = {
+            "schema_version": 1,
+            "input": {"base_shape": [1, 3, 48, 1], "widths": widths},
+            "metadata_nodes": [
+                {"op": "Shape", "outputs": [name]}
+                for name in ("Shape.1", "Shape.3", "Shape.7", "Shape.13")
+            ]
+            + [
+                {"op": "Slice", "outputs": [name]}
+                for name in ("Slice.1", "helper.slice.0")
+            ],
+            "probes": [],
+        }
+        for width in widths:
+            report["probes"].append(
+                {
+                    "width": width,
+                    "input_shape": [1, 3, 48, width],
+                    "metadata": {
+                        "Shape.1": [1, 120, 1, width // 8],
+                        "Shape.3": [1, 120, 1, width // 8],
+                        "Shape.7": [1, 8, width // 8 + (1 if width == 320 else 0), 15],
+                        "Shape.13": [1, 8, width // 8, 15],
+                        "Slice.1": [width // 8],
+                        "helper.slice.0": [1, 120],
+                    },
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "probe 320 output Shape.7"):
+            validate_report(report)
 
 
 if __name__ == "__main__":

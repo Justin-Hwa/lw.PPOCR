@@ -21,7 +21,7 @@ from onnx import TensorProto, helper, numpy_helper, shape_inference
 import onnxruntime as ort
 
 
-DEFAULT_WIDTHS = (320, 480, 640, 960)
+DEFAULT_WIDTHS = (192, 320, 480, 640, 960)
 METADATA_OPS = {"Shape", "Slice"}
 
 

@@ -6,29 +6,46 @@
 |---|---|---|---|---|---|
 | PP-OCRv6 | Tiny | ✅ | ✅ | ✅ | ✅ |
 
-## Analysis-only
+## Experimental model support
 
-| Family | Variant | ONNX analysis | Converter | Runtime / release |
-|---|---|---|---|---|
-| PP-OCRv6 | Small | external model directory supported | not yet verified | not supported |
-| PP-OCRv6 | Medium | external model directory supported | not yet verified | not supported |
+| Family | Variant | ONNX analysis | Experimental LWM | Full OCR | Release |
+|---|---|---|---|---|---|
+| PP-OCRv6 | Small | ✅ | ✅ fixed + dynamic prototypes | ✅ experimental | ❌ |
+| PP-OCRv6 | Medium | external model directory supported | ❌ | ❌ | ❌ |
 
-Analysis-only means that ONNX checker, shape inference, operator inventory, and
-FLOP reporting may be run when the model assets are supplied. It is not a
-public support claim and does not add the variant to C ABI, Android, WASM, or
-release packages.
+Experimental means that ONNX checker, shape inference, operator inventory,
+fixed-width and narrow dynamic LWM conversion, graph-output comparison, and
+(for Small) a dependency-free full-OCR pipeline have been validated when the
+external model assets are supplied. It is not a production support claim and
+does not add the variant to the default model package, C ABI, Android, WASM,
+or release assets.
 
 See the [PP-OCRv6 Small analysis snapshot](ppocrv6-small-analysis.md) for the
 current graph-size and operator Go/No-Go findings.
 
-The exact REC, fixed-batch CLS, and DET models are exposed through experimental
-public C APIs. REC is verified through preprocessing, its full graph, and UTF-8
-CTC decoding. CLS is verified through preprocessing, its full graph, and the
-0/180-degree result. DET is verified through preprocessing, its full graph,
-DB-style quadrilateral postprocessing, and original-coordinate restoration.
-The exact three-model composition is also verified through pure-C perspective
-crop, optional direction correction, and UTF-8 full-image output. Encoded
+The exact Tiny REC, fixed-batch CLS, and DET models are exposed through the
+production public C APIs. Small REC and DET are currently exposed only through
+experimental conversion and validation tools; the Small full-OCR experiment
+uses the released Tiny CLS asset as a temporary shared classifier. Small CLS
+identity has not yet been promoted to a model-package contract. Encoded
 image-file decoding stays outside the core API.
+
+### External Small validation assets
+
+These hashes identify the external PP-OCRv6 Small assets used by the current
+experiments. They are recorded for reproducibility only; the files are not
+bundled or redistributed by this repository.
+
+| Asset | Role | SHA-256 |
+|---|---|---|
+| PP-OCRv6 Small DET | detector | `d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e` |
+| PP-OCRv6 Small REC | recognizer | `5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634` |
+| PP-OCRv6 Small REC dictionary | CTC dictionary | `118d0f0714ad2a37668c23d6541f2c3feb65b8214041265b567f7fd5b3365d8e` |
+
+The Small dictionary contains 18,708 entries and the REC graph exposes 18,710
+classes, matching the current decoder convention (blank plus trailing space).
+This contract must be checked in the external validation workflow before a
+Small model package can be considered.
 
 ### Tiny asset hashes
 
