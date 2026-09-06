@@ -11,14 +11,15 @@
 | Family | Variant | ONNX analysis | Experimental LWM | Full OCR | Release |
 |---|---|---|---|---|---|
 | PP-OCRv6 | Small | ✅ | ✅ fixed + dynamic prototypes | ✅ experimental | model archive only |
-| PP-OCRv6 | Medium | ✅ | ✅ fixed-shape DET + fixed-width REC analysis prototypes | ❌ | model archive only |
+| PP-OCRv6 | Medium | ✅ | ✅ fixed + dynamic analysis prototypes | ✅ analysis gate | model archive only |
 
 Experimental means that ONNX checker, shape inference, operator inventory,
 fixed-width and narrow dynamic LWM conversion, graph-output comparison, and
 (for Small) a dependency-free full-OCR pipeline have been validated when the
 external model assets are supplied. Medium currently has analysis-only
 fixed-shape/fixed-width and narrow dynamic conversion checkpoints, plus one
-complete sample-image composition check; it has no production package. This is not a
+complete sample-image composition check and a scheduled Windows/Linux analysis
+gate at REC width 960; it has no production package. This is not a
 production support claim and does not add either variant to the default model
 package, C ABI, Android, WASM, or the default runtime release. The dedicated
 model archive contains the checked ONNX inputs for reproducible analysis only.
@@ -33,7 +34,8 @@ See the [PP-OCRv6 Small analysis snapshot](ppocrv6-small-analysis.md) for the
 current graph-size and operator Go/No-Go findings.
 The generated [PP-OCRv6 Medium analysis report](ppocrv6-medium-analysis.md)
 records its DET/REC graph, current operator surface, and fixed-width REC
-conversion checkpoint.
+conversion checkpoint. Its versioned CI policy is
+[`ci/ppocrv6-medium-validation.json`](../ci/ppocrv6-medium-validation.json).
 
 The exact Tiny REC, fixed-batch CLS, and DET models are exposed through the
 production public C APIs. Small REC and DET are currently exposed only through

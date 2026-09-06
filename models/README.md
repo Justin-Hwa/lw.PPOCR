@@ -45,6 +45,20 @@ The corresponding Medium DET checkpoint uses
 `tools/run_medium_det_validation.py` and tests `320x320`, `640x640`, and
 `640x960`.
 
+The preferred combined analysis gate reuses one dynamic DET and REC conversion,
+checks every supported shape/width, and runs complete OCR with REC width 960:
+
+```bash
+python tools/run_medium_validation.py \
+  --contract ci/ppocrv6-medium-validation.json \
+  --build-dir build \
+  --output-dir build-model-foundation/medium-validation-report
+```
+
+Generated LWM files and full graph tensors are temporary. Only compact reports
+are retained by CI, and passing this gate does not promote Medium into a
+production or platform release package.
+
 To compare a candidate report with the checked-in Tiny baseline:
 
 ```bash

@@ -182,6 +182,38 @@ python tools/run_medium_ocr_validation.py \
 The generated LWM files and validation outputs are temporary build artifacts;
 they are intentionally not part of the released model catalog yet.
 
+## Continuous analysis validation
+
+The dedicated `ppocrv6-medium-validation` workflow now turns the conversion
+checkpoint into a repeatable analysis gate on Windows x64 and Linux x64. It
+validates the checked-in model catalog and asset hashes, runs dynamic DET at
+`320x320`, `640x640`, and `640x960`, runs dynamic REC at widths `192`, `320`,
+`480`, `640`, and `960`, and finishes with complete OCR at the production
+default REC width `960`.
+
+The complete OCR gate requires 16 lines and pins the SHA-256 of the
+newline-joined UTF-8 text to
+`80ee582e0d0b62b87477b83400b793c26307b16c77adbca53419845c5442b1eb`.
+The numerical tolerances and model-catalog location are versioned in
+`ci/ppocrv6-medium-validation.json`. CI uploads the compact conversion,
+numerical-comparison, resolved-contract, and OCR reports, while generated LWM
+files and full output tensors remain temporary to avoid a very large Artifact.
+
+The workflow runs weekly and when Medium-specific model, converter, contract,
+or workflow inputs change. General runtime changes are covered by the weekly
+run rather than making every ordinary push pay the Medium execution cost. A
+green workflow is continued analysis evidence only: it does not add Medium to
+the default model package, public C ABI, Android, WASM, Java, or C# releases.
+
+Run the same gate locally with:
+
+```text
+python tools/run_medium_validation.py \
+  --contract ci/ppocrv6-medium-validation.json \
+  --build-dir build \
+  --output-dir build-model-foundation/medium-validation-report
+```
+
 ## REC accuracy snapshot
 
 The shared ten-crop REC corpus was replayed through the native REC pipeline for
