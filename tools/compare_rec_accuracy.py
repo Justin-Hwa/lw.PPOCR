@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare Tiny and Small REC output on the versioned recognition corpus."""
+"""Compare Tiny, Small, and optional Medium REC output on the corpus."""
 
 from __future__ import annotations
 
@@ -105,6 +105,18 @@ def main() -> int:
     parser.add_argument("--tiny-dictionary", type=Path, required=True)
     parser.add_argument("--small-rec", type=Path, required=True)
     parser.add_argument("--small-dictionary", type=Path, required=True)
+    parser.add_argument(
+        "--medium-rec",
+        type=Path,
+        help="optional Medium dynamic REC LWM; uses the Small dictionary by default",
+    )
+    parser.add_argument("--medium-dictionary", type=Path)
+    parser.add_argument(
+        "--target-width",
+        type=int,
+        choices=(192, 320, 480, 640, 960),
+        help="override the corpus target width for this comparison",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     corpus = json.loads(args.corpus.read_text(encoding="utf-8"))
@@ -115,13 +127,23 @@ def main() -> int:
     cases = corpus.get("cases")
     if not isinstance(cases, list) or not cases:
         raise SystemExit("REC corpus must contain cases")
-    target_width = int(corpus["target_width"])
+    target_width = args.target_width or int(corpus["target_width"])
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory)
         metrics = {
             "tiny": run_model(args.driver, args.tiny_rec, args.tiny_dictionary, args.sample, cases, target_width, temporary / "tiny"),
             "small": run_model(args.driver, args.small_rec, args.small_dictionary, args.sample, cases, target_width, temporary / "small"),
         }
+        if args.medium_rec is not None:
+            metrics["medium"] = run_model(
+                args.driver,
+                args.medium_rec,
+                args.medium_dictionary or args.small_dictionary,
+                args.sample,
+                cases,
+                target_width,
+                temporary / "medium",
+            )
     report = {
         "schema_version": 1,
         "corpus": str(args.corpus),
@@ -133,12 +155,18 @@ def main() -> int:
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    print(json.dumps({
+    summary = {
         "status": "ok",
         "target_width": target_width,
         "tiny": {key: metrics["tiny"][key] for key in ("cer", "exact_line_rate", "exact_lines")},
         "small": {key: metrics["small"][key] for key in ("cer", "exact_line_rate", "exact_lines")},
-    }, ensure_ascii=False))
+    }
+    if "medium" in metrics:
+        summary["medium"] = {
+            key: metrics["medium"][key]
+            for key in ("cer", "exact_line_rate", "exact_lines")
+        }
+    print(json.dumps(summary, ensure_ascii=False))
     return 0
 
 

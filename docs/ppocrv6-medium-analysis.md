@@ -181,3 +181,97 @@ python tools/run_medium_ocr_validation.py \
 
 The generated LWM files and validation outputs are temporary build artifacts;
 they are intentionally not part of the released model catalog yet.
+
+## REC accuracy snapshot
+
+The shared ten-crop REC corpus was replayed through the native REC pipeline for
+Tiny, Small, and Medium. CER is total Unicode-codepoint edit distance divided
+by reference characters; Exact Line Rate requires the complete decoded crop to
+match.
+
+The comparison is reproducible with `tools/compare_rec_accuracy.py`; pass
+`--target-width 960` to repeat the same corpus at the wider runtime bucket.
+
+| REC target width | Tiny CER / exact | Small CER / exact | Medium CER / exact |
+|---:|---:|---:|---:|
+| 320 | 0.00% / 10/10 (100%) | 2.27% / 7/10 (70%) | 2.27% / 7/10 (70%) |
+| 960 | 0.76% / 9/10 (90%) | 4.55% / 4/10 (40%) | 2.27% / 7/10 (70%) |
+
+This is a REC-only, ten-crop snapshot rather than an end-to-end detection
+accuracy claim. Medium is better than Small at width 960 on this corpus, but it
+does not yet beat Tiny; a larger independently labelled corpus is required
+before choosing a production default.
+
+## End-to-end profile snapshot
+
+The private `full-ocr-profile-driver` was rebuilt against the current runtime
+and run for three measured iterations on the same 500x500 sample, with the
+shared Tiny CLS and four line-worker configurations. Values below are
+instrumented wall time, not the uninstrumented benchmark latency:
+
+| Model | Workers | Full OCR wall | DET graph | REC graph work |
+|---|---:|---:|---:|---:|
+| Tiny | 1 | 976.0 ms | 107.9 ms | 622.1 ms |
+| Small | 1 | 4,175.9 ms | 285.0 ms | 3,432.6 ms |
+| Medium | 1 | 29,729.8 ms | 3,798.1 ms | 25,029.5 ms |
+| Tiny | 4 | 453.8 ms | 110.5 ms | 827.6 ms |
+| Small | 4 | 1,829.3 ms | 287.2 ms | 4,990.3 ms |
+| Medium | 4 | 13,780.7 ms | 3,179.8 ms | 39,251.9 ms |
+
+The Medium graph is therefore functionally composable but currently much more
+expensive than Tiny and Small on this CPU. It should remain an opt-in analysis
+model until the accuracy/latency trade-off is evaluated on a broader corpus.
+
+## Uninstrumented end-to-end benchmark
+
+To compare with the historical Windows x64 performance snapshot, the release
+`lw-ocr-benchmark` was run on the bundled 500x500 sample with AVX2 enabled and
+`REC target_width=320`. Unlike the profile driver above, this benchmark measures
+the public full-OCR call path without per-node instrumentation. Tiny used 50
+timed iterations; Small used 10; Medium used one smoke iteration because its
+latency is substantially higher.
+
+| Model | Workers | Timed iterations | Full OCR mean |
+|---|---:|---:|---:|
+| Tiny | 1 | 50 | 219.90 ms |
+| Tiny | 4 | 50 | 109.30 ms |
+| Small | 1 | 10 | 794.05 ms |
+| Small | 4 | 10 | 331.66 ms |
+| Medium | 1 | 1 | 4,013.61 ms |
+| Medium | 4 | 1 | 2,002.57 ms |
+
+The historical Tiny reference was 209.27 ms (one worker) and 98.47 ms (four
+workers). The current Tiny result is therefore in the same range, with roughly
+5.1% and 11.0% higher means respectively; the difference is not evidence of a
+regression until the exact toolchain, runtime state, and benchmark revision are
+held constant. The earlier profile-driver values must not be compared directly
+with this table: they used `REC target_width=960` and include instrumentation.
+
+Small is currently about 3.6x / 3.0x Tiny at width 320, while Medium is about
+18.3x / 18.3x on the limited one-iteration smoke sample. These numbers support
+keeping Medium analysis-only and Small opt-in until a production benchmark and a
+larger accuracy corpus justify a default change.
+
+## Small REC width sweep
+
+The same uninstrumented benchmark was used to separate the REC-width trade-off
+from kernel changes. This exploratory sweep used two timed iterations per point;
+the longer 10-iteration width-320 result is retained in the table above.
+
+| REC width | Small CER / exact | 1 worker mean | 4 workers mean |
+|---:|---:|---:|---:|
+| 192 | 6.06% / 4/10 (40%) | 545.23 ms | 257.21 ms |
+| 320 | 2.27% / 7/10 (70%) | 795.70 ms | 356.85 ms |
+| 480 | 3.03% / 7/10 (70%) | 1,141.84 ms | 459.29 ms |
+| 640 | 3.03% / 6/10 (60%) | 1,436.55 ms | 552.08 ms |
+| 960 | 4.55% / 4/10 (40%) | 1,491.09 ms | 648.62 ms |
+
+The 192 bucket is faster, but its accuracy loss is too large for a general
+default. Width 320 remains the best current Small trade-off on this corpus. At
+that width the REC profile is dominated by Conv (about 127 ms over five graph
+iterations), followed by MatMul (about 18 ms); this makes the next optimization
+target the Small REC Conv path, especially the repeated 1x1 and early 3x3
+nodes, rather than more width-specialization in the converter.
+
+The sweep is reproducible with `tools/benchmark_ocr_widths.py`; it records the
+benchmark JSON instead of relying on copied console output.
