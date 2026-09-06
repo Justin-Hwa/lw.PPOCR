@@ -334,6 +334,16 @@ degenerate quadrilateral cannot produce a valid crop. Output lines retain the
 detector reading order. A crop exceeding `max_crop_pixels` returns
 `LW_STATUS_MEMORY_LIMIT`.
 
+### Full OCR quality profile
+
+`lw_ocr_options_init` keeps the public `recognizer.target_width` default at
+`320` for compatibility. Applications that process full pages or long text
+lines may set `options.recognizer.target_width = 960`; in composed OCR, a value
+above `320` enables adaptive line widths, and the runtime selects an appropriate
+width from `192/320/480/640/960` up to that maximum. This does not change the
+public API default. The official `lw-ocr-ppm` demo uses this quality-oriented
+`960` maximum by default, while benchmark tools keep their historical defaults.
+
 ```c
 lw_ocr* ocr = NULL;
 lw_ocr_info info;

@@ -71,11 +71,11 @@ separate CPU-topology-aware intra-op budget, capped at eight physical cores,
 before the independently configured CLS/REC line workers begin. This keeps
 `worker_count` focused on line-level memory and latency trade-offs.
 
-Long-text clients such as the offline HTML and C# Demo use
-`REC target_width = 960` as a maximum to preserve wide-line detail. Full OCR
-now selects 192/320/480/640/960 per detected line, sorts work by width, and
-keeps at most two concrete REC sessions per worker. Standalone REC and the
-public C ABI remain unchanged. In local fixed-960 versus adaptive-960 profiles,
+Long-text clients such as the C full-OCR demo, offline HTML, Java/JNI, and C#
+Demo use `REC target_width = 960` as a maximum to preserve wide-line detail.
+Full OCR now selects 192/320/480/640/960 per detected line, sorts work by
+width, and keeps at most two concrete REC sessions per worker. Standalone REC
+and the public C ABI remain unchanged. In local fixed-960 versus adaptive-960 profiles,
 the 16-line sample improved by 31.09% with one worker and 17.39% with four;
 the long-line-heavy article sample improved by 13.38% and 5.61% respectively.
 Both comparisons retained identical OCR text checksums.

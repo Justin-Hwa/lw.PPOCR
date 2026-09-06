@@ -145,7 +145,32 @@ class StagedPackageTest(unittest.TestCase):
             timeout=600,
         )
         self.assertEqual(recognized.returncode, 0, recognized.stdout + recognized.stderr)
+        self.assertIn("config rec_max_width=960 adaptive=yes", recognized.stdout)
         self.assertIn("text=纯臻营养护发素", recognized.stdout)
+        legacy_recognized = subprocess.run(
+            [
+                str(root / "bin" / full_ocr),
+                str(root / "models" / "det.lwm"),
+                str(root / "models" / "cls.lwm"),
+                str(root / "models" / "rec.lwm"),
+                str(root / "models" / "ppocr_keys.txt"),
+                str(root / "models" / "sample.ppm"),
+                "320",
+            ],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=600,
+        )
+        self.assertEqual(
+            legacy_recognized.returncode,
+            0,
+            legacy_recognized.stdout + legacy_recognized.stderr,
+        )
+        self.assertIn("config rec_max_width=320 adaptive=no", legacy_recognized.stdout)
         http_server = root / "bin" / (
             "lw.PPOCR.C.HttpServer.exe"
             if sys.platform == "win32"

@@ -4,8 +4,11 @@
 #include "ppm_image.h"
 
 #include <stdint.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #if defined(_WIN32)
 #  include <shellapi.h>
@@ -13,6 +16,26 @@
 
 /* Capacities cross the public ABI as fixed-width integers. Check them through
  * uint64_t so the same source remains warning-clean on 32-bit and 64-bit. */
+#define LW_OCR_DEMO_DEFAULT_REC_MAX_WIDTH 960u
+
+static int valid_rec_max_width(uint32_t value) {
+    return value == 192u || value == 320u || value == 480u || value == 640u || value == 960u;
+}
+
+static int parse_rec_max_width(const char* text, uint32_t* value) {
+    char* end = NULL;
+    unsigned long parsed;
+    if (text == NULL || value == NULL || *text == '\0')
+        return 0;
+    errno = 0;
+    parsed = strtoul(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || parsed > UINT32_MAX ||
+        !valid_rec_max_width((uint32_t)parsed))
+        return 0;
+    *value = (uint32_t)parsed;
+    return 1;
+}
+
 static int allocation_fits(uint64_t count, size_t element_size) {
     return element_size != 0u && count <= (uint64_t)(SIZE_MAX / element_size);
 }
@@ -26,12 +49,19 @@ static int demo_main(int argc, char** argv) {
     lw_error error;
     lw_example_ppm_image image;
     lw_status status;
+    lw_ocr_options options;
+    uint32_t rec_max_width = LW_OCR_DEMO_DEFAULT_REC_MAX_WIDTH;
     uint32_t index;
     int return_code = 1;
     memset(&image, 0, sizeof(image));
-    if (argc != 6) {
+    if (argc != 6 && argc != 7) {
         fprintf(stderr, "usage: lw-ocr-ppm <det.lwm> <cls.lwm> <rec.lwm> "
-                        "<dictionary.txt> <image.ppm>\n");
+                        "<dictionary.txt> <image.ppm> [rec-max-width]\n"
+                        "rec-max-width: 192, 320, 480, 640, or 960 (default: 960)\n");
+        return 2;
+    }
+    if (argc == 7 && !parse_rec_max_width(argv[6], &rec_max_width)) {
+        fprintf(stderr, "invalid rec-max-width: %s\n", argv[6]);
         return 2;
     }
     if (!lw_example_ppm_image_load_bgr(argv[5], &image) || image.width > UINT32_MAX / 3u) {
@@ -39,7 +69,9 @@ static int demo_main(int argc, char** argv) {
         goto cleanup;
     }
     lw_error_init(&error);
-    status = lw_ocr_create(argv[1], argv[2], argv[3], argv[4], NULL, &ocr, &error);
+    lw_ocr_options_init(&options);
+    options.recognizer.target_width = rec_max_width;
+    status = lw_ocr_create(argv[1], argv[2], argv[3], argv[4], &options, &ocr, &error);
     if (status != LW_STATUS_OK) {
         fprintf(stderr, "create failed: %s: %s\n", lw_status_string(status), error.message);
         goto cleanup;
@@ -67,6 +99,8 @@ static int demo_main(int argc, char** argv) {
         fprintf(stderr, "OCR failed: %s: %s\n", lw_status_string(status), error.message);
         goto cleanup;
     }
+    printf("config rec_max_width=%u adaptive=%s\n", rec_max_width,
+           rec_max_width > 320u ? "yes" : "no");
     printf("lines=%u image=%ux%u detector_input=%ux%u\n", result.line_count, image.width,
            image.height, result.detector_resized_width, result.detector_resized_height);
     for (index = 0u; index < result.line_count; ++index) {

@@ -87,8 +87,11 @@ Run the complete OCR Demo against the same full-image fixture:
 
 It runs DET, pure-C perspective crop, CLS direction correction, and REC, then
 prints UTF-8 text, all stage scores, applied rotation, and one original-image
-quadrilateral per line. The staged-package smoke test builds the installed
-consumer and requires the expected sample title from this installed binary.
+quadrilateral per line. The full-OCR demo defaults to `rec_max_width=960` and
+adaptive line widths. To reproduce the legacy/default C API REC width, append
+`320` as the final argument; valid values are `192`, `320`, `480`, `640`, and
+`960`. The staged-package smoke test checks both the default `960` profile and
+the explicit `320` override.
 
 The default package contains the cross-platform native
 `lw.PPOCR.C.HttpServer` executable and `www/`. Its installed-package test
