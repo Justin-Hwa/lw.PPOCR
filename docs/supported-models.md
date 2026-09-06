@@ -26,8 +26,8 @@ current graph-size and operator Go/No-Go findings.
 The exact Tiny REC, fixed-batch CLS, and DET models are exposed through the
 production public C APIs. Small REC and DET are currently exposed only through
 experimental conversion and validation tools; the Small full-OCR experiment
-uses the released Tiny CLS asset as a temporary shared classifier. Small CLS
-identity has not yet been promoted to a model-package contract. Encoded
+uses the exact shared Tiny CLS asset. Its SHA-256 is part of the Small
+validation contract. Encoded
 image-file decoding stays outside the core API.
 
 ### External Small validation assets
@@ -41,11 +41,12 @@ bundled or redistributed by this repository.
 | PP-OCRv6 Small DET | detector | `d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e` |
 | PP-OCRv6 Small REC | recognizer | `5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634` |
 | PP-OCRv6 Small REC dictionary | CTC dictionary | `118d0f0714ad2a37668c23d6541f2c3feb65b8214041265b567f7fd5b3365d8e` |
+| PP-OCRv6 Tiny CLS (shared) | direction classifier | `dd8b2b61983d76ab230a58da9e0e0e84956b71c3877f2ce6e438fe22d74d2cf2` |
 
 The Small dictionary contains 18,708 entries and the REC graph exposes 18,710
 classes, matching the current decoder convention (blank plus trailing space).
-This contract must be checked in the external validation workflow before a
-Small model package can be considered.
+The Small profile deliberately reuses the exact Tiny CLS asset above; no
+separate Small CLS package is required.
 
 ### Tiny asset hashes
 

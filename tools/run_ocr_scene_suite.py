@@ -27,7 +27,11 @@ LINE_RE = re.compile(
     r"rotate=(?P<rotation>\d+) \[(?P<box>.*)\]$"
 )
 POINT_RE = re.compile(r"\(([-+0-9.eE]+),([-+0-9.eE]+)\)")
-HEADER_RE = re.compile(r"^lines=(\d+) image=(\d+)x(\d+)")
+HEADER_RE = re.compile(
+    r"^lines=(?P<detected>\d+) "
+    r"image=(?P<image_width>\d+)x(?P<image_height>\d+) "
+    r"detector_input=(?P<detector_width>\d+)x(?P<detector_height>\d+)$"
+)
 
 
 def sha256(path: Path) -> str:
@@ -45,9 +49,11 @@ def parse_output(stdout: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         if header_match is not None:
             header.update(
                 {
-                    "detected_lines": int(header_match.group(1)),
-                    "detector_width": int(header_match.group(2)),
-                    "detector_height": int(header_match.group(3)),
+                    "detected_lines": int(header_match.group("detected")),
+                    "image_width": int(header_match.group("image_width")),
+                    "image_height": int(header_match.group("image_height")),
+                    "detector_width": int(header_match.group("detector_width")),
+                    "detector_height": int(header_match.group("detector_height")),
                 }
             )
             continue

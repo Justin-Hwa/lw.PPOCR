@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +21,11 @@ import onnx
 from onnx import TensorProto, helper, numpy_helper, shape_inference
 import onnxruntime as ort
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-DEFAULT_WIDTHS = (192, 320, 480, 640, 960)
+from converter.ppocr_contracts import PP_OCRV6_REC_WIDTHS
+
+DEFAULT_WIDTHS = PP_OCRV6_REC_WIDTHS
 METADATA_OPS = {"Shape", "Slice"}
 
 

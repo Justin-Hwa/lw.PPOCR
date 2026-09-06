@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Convert an analysis-only PP-OCRv6 Small REC prototype to LWM.
 
-This is intentionally an analysis tool, not a release converter.  It first
-The default mode materializes Shape-derived metadata at one fixed input width.
+This is intentionally an analysis tool, not a release converter. The default
+mode materializes Shape-derived metadata at one fixed input width.
 The optional ``--dynamic`` mode removes the narrow Shape/Slice metadata
 subgraph used only as Reshape control and retains one unresolved output
 dimension for the runtime to infer. Both modes are experimental and must be
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import sys
 import tempfile
@@ -26,7 +27,10 @@ from onnx import numpy_helper, shape_inference
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from converter.lwm_v0 import _materialize_slice_inputs, _normalize_same_upper, _write_model
+from converter.ppocr_contracts import PP_OCRV6_REC_WIDTHS, PP_OCRV6_SMALL_REC_SHA256
 from tools.probe_rec_shape_metadata import _instrument, metadata_nodes, staticize
+from tools.probe_rec_shape_metadata import probe
+from tools.validate_small_rec_dynamic_rule import validate_report
 
 
 def normalize_padding(model: onnx.ModelProto) -> onnx.ModelProto:
@@ -232,7 +236,15 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--width must be positive")
 
     static_report = None
+    dynamic_contract = None
     if args.dynamic:
+        digest = hashlib.sha256(args.model.read_bytes()).hexdigest()
+        if digest != PP_OCRV6_SMALL_REC_SHA256:
+            raise SystemExit(
+                "dynamic Small REC conversion requires the pinned PP-OCRv6 Small asset; "
+                f"expected SHA-256 {PP_OCRV6_SMALL_REC_SHA256}, got {digest}"
+            )
+        dynamic_contract = validate_report(probe(args.model, list(PP_OCRV6_REC_WIDTHS)))
         source = onnx.load(str(args.model), load_external_data=True)
         inferred = dynamic_shape_inference(source)
         model = normalize_padding(_materialize_slice_inputs(lower_dynamic_metadata(source)))
@@ -259,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         "dynamic": bool(args.dynamic),
         "output": str(args.output),
         "staticization": static_report,
+        "dynamic_contract": dynamic_contract,
         "conversion": {
             **info.__dict__,
             "checksum": f"0x{info.checksum:016x}",

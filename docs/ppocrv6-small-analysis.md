@@ -102,13 +102,68 @@ python tools/convert_small_rec_experimental.py \
   --report build/small-rec-dynamic.json
 ```
 
+Dynamic conversion is fail-closed: it verifies the pinned Small REC SHA-256,
+probes all five contract widths, and runs the exact metadata-rule validator
+before writing an LWM. The matching REC/dictionary class contract can be
+checked separately with:
+
+```bash
+python tools/validate_small_dictionary_contract.py \
+  --rec-model path/to/PP-OCRv6_small_rec.onnx \
+  --dictionary path/to/PP-OCRv6_small_rec_dict.txt
+```
+
+For a complete model directory containing `model.json`, the reusable contract
+validator also checks manifest hashes and the REC output-class/dictionary
+relationship:
+
+```bash
+python tools/validate_model_contract.py models/ppocrv6-tiny
+```
+
+The same command can be used with an external Small validation directory once
+its manifest is prepared; it does not make Small a bundled production model.
+
+For the currently pinned external assets, the local validation directory can
+be staged without modifying the repository:
+
+```bash
+python tools/stage_small_validation_bundle.py \
+  --det path/to/PP-OCRv6_small_det.onnx \
+  --cls models/ppocrv6-tiny/cls.onnx \
+  --rec path/to/PP-OCRv6_small_rec.onnx \
+  --dictionary path/to/PP-OCRv6_small_rec_dict.txt \
+  --output-dir build-model-foundation/ppocrv6-small-validation
+python tools/validate_model_contract.py \
+  build-model-foundation/ppocrv6-small-validation
+```
+
+The staged manifest records `variant: small`, `runtime_status: analysis-only`,
+and the shared Tiny CLS identity. The bundle is a local validation artifact,
+not a redistributed model package.
+
+The current Small profile deliberately reuses the exact bundled Tiny
+classifier. Its SHA-256 is pinned in `converter/ppocr_contracts.py`; the
+identity tool remains available as a guard if a future package proposes a
+different classifier:
+
+```bash
+python tools/compare_cls_identity.py \
+  --reference-cls models/ppocrv6-tiny/cls.onnx \
+  --candidate-cls path/to/PP-OCRv6_small_cls.onnx
+```
+
+Only an identical SHA-256 receives the `reuse-tiny-cls-contract` recommendation;
+a structurally similar but different classifier still requires independent
+conversion and numerical/full-OCR gates.
+
 The same generated LWM file was executed by the C runtime at widths 192, 320,
 480, 640, and 960. All sessions resolved to the expected output shapes and
 matched ONNX Runtime under the existing numerical gate (mean absolute error
 below `1e-6`, fraction above `1e-4` below `1e-4`). This is a dynamic execution
-prototype, not a release model: the Small dictionary, CLS identity, golden
-corpus, cross-platform results, memory budget, and packaging contracts remain
-outstanding.
+prototype, not a release model: the Small dictionary contract, golden corpus,
+cross-platform results, memory budget, and packaging contracts remain
+outstanding. The CLS input is the pinned shared Tiny asset.
 
 ## Fixed-width LWM execution gate
 
@@ -180,7 +235,7 @@ production converter feature.
 The DET prototype was emitted with dynamic spatial dimensions using `--dynamic`,
 and the REC prototype now uses the same dynamic LWM path. The existing session
 shape resolver accepted the DET graph at 320×320 and 640×640, and the REC graph
-at all five target widths. Combined with the temporary released Tiny CLS model,
+at all five target widths. Combined with the pinned shared Tiny CLS model,
 the existing `lw-ocr-ppm` pipeline completed on the bundled 500×500 sample
 image and returned 16 lines. The first lines were:
 
@@ -192,7 +247,7 @@ image and returned 16 lines. The first lines were:
 ```
 
 The reproducible experiment uses the external Small DET/REC models and their
-matching dictionary, plus the released Tiny CLS model:
+matching dictionary, plus the shared Tiny CLS model:
 
 ```bash
 python tools/convert_small_det_experimental.py \
@@ -207,15 +262,15 @@ build/Release/lw-ocr-ppm \
   build/models/sample.ppm 320
 ```
 
-This is a pipeline compatibility check, not an accuracy benchmark: the
-temporary Tiny CLS asset and the Small dictionary/model contract still require
-their own identity, golden-corpus, and cross-platform release gates.
+This is a pipeline compatibility check, not an accuracy benchmark: the Small
+dictionary/model contract, golden-corpus, and cross-platform release gates
+remain outstanding; the shared Tiny CLS identity is fixed.
 
-The experiment used the released Tiny CLS model only to exercise the
-orientation-classification stage, while DET/REC and the dictionary came from
-the external Small assets. This is a pipeline compatibility check, not an
-accuracy benchmark: punctuation differences versus Tiny are expected until a
-Small-specific golden corpus and thresholds are established.
+The experiment uses the shared Tiny CLS model for orientation classification,
+while DET/REC and the dictionary come from the external Small assets. This is
+a pipeline compatibility check, not an accuracy benchmark: punctuation
+differences versus Tiny are expected until a Small-specific golden corpus and
+thresholds are established.
 
 ## Preliminary performance baseline
 
@@ -257,7 +312,6 @@ the sample SHA-256, all four model/dictionary SHA-256 identities, 16-line text
 ordering, boxes, classification metadata, and score stability. The current
 dynamic DET/REC baseline replay completed successfully on the local Windows
 x64 build; its JSON remains an ignored build artifact.
-all 16 lines, text, boxes, classification metadata, and score stability.
 
 ## Deterministic OCR scene set
 
@@ -300,3 +354,42 @@ regions, so their detector line counts are higher than the logical source-line
 count in the manifest. The generator auto-detects Microsoft YaHei, Noto CJK,
 WenQuanYi, and PingFang candidates; use `--font /path/to/font.ttc` when a CI
 image does not provide one of these fonts.
+
+## Reproducible CI validation
+
+The repository contains a manual workflow named `PP-OCRv6 Small validation`:
+`.github/workflows/ppocrv6-small-validation.yml`. It is intentionally not part
+of the normal release workflow because Small is still analysis-only and its
+model archive is not redistributed by this repository.
+
+The workflow accepts two inputs:
+
+* `assets_url`: a pinned ZIP URL containing the external Small DET, REC, and
+  dictionary files;
+* `assets_sha256`: the SHA-256 of that exact ZIP file.
+
+The archive may contain either the short names `det.onnx`, `rec.onnx`, and
+`ppocr_keys.txt`, or the upstream names
+`PP-OCRv6_small_det.onnx`, `PP-OCRv6_small_rec.onnx`, and
+`PP-OCRv6_small_rec_dict.txt`. The workflow rejects path traversal, verifies
+the archive checksum before extraction, and normalizes the three files into a
+temporary CI directory. The bundled Tiny `cls.onnx` is used deliberately: the
+Small profile has no separate classifier and the exact Tiny CLS identity is
+pinned by `converter/ppocr_contracts.py`.
+
+The same pipeline can be run locally without copying assets into the source
+tree:
+
+```bash
+python tools/run_small_validation.py \
+  --assets-dir path/to/small-assets \
+  --build-dir build \
+  --output-dir build-model-foundation/small-validation-run
+```
+
+It stages a manifest-checked analysis bundle, probes the REC dynamic metadata,
+converts DET and REC prototypes, executes all three DET shapes and all five
+REC widths, applies the numerical gates, and runs the complete OCR sample. A
+successful run writes the report and intermediate outputs under the selected
+output directory. This is a repeatable compatibility gate, not a production
+support or release-package claim.

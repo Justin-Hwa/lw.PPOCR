@@ -813,11 +813,46 @@ endif()
 endif()
 
 if(BUILD_TESTING AND NOT EMSCRIPTEN)
+    set(LW_RESHAPE_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/test-fixtures")
+    set(LW_RESHAPE_FIXTURES
+        "${LW_RESHAPE_FIXTURE_DIR}/valid.lwm"
+        "${LW_RESHAPE_FIXTURE_DIR}/two-unknown.lwm"
+        "${LW_RESHAPE_FIXTURE_DIR}/non-divisible.lwm"
+        "${LW_RESHAPE_FIXTURE_DIR}/zero.lwm"
+        "${LW_RESHAPE_FIXTURE_DIR}/overflow.lwm")
+    add_custom_command(
+        OUTPUT ${LW_RESHAPE_FIXTURES}
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/create_reshape_test_models.py"
+                --output-dir "${LW_RESHAPE_FIXTURE_DIR}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/create_reshape_test_models.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/converter/lwm_v0.py"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Creating direct dynamic Reshape contract fixtures"
+        VERBATIM)
+    add_custom_target(dynamic_reshape_fixtures DEPENDS ${LW_RESHAPE_FIXTURES})
+    add_executable(test-dynamic-reshape tests/reshape_dynamic_driver.c)
+    target_link_libraries(test-dynamic-reshape PRIVATE lw_ppocr_c)
+    target_compile_features(test-dynamic-reshape PRIVATE c_std_11)
+    add_dependencies(test-dynamic-reshape dynamic_reshape_fixtures)
+    if(MSVC)
+        target_compile_options(test-dynamic-reshape PRIVATE /W4 /WX /utf-8)
+    else()
+        target_compile_options(test-dynamic-reshape PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(
+        NAME dynamic_reshape_contract
+        COMMAND test-dynamic-reshape ${LW_RESHAPE_FIXTURES})
+
     add_test(
         NAME model_analysis
         COMMAND "${Python3_EXECUTABLE}" -m unittest -v
                 tests.test_analyze_onnx tests.test_compare_model_analysis
-                tests.test_model_manifest tests.test_probe_rec_shape_metadata
+                tests.test_cls_identity tests.test_model_contract
+                tests.test_small_validation_bundle
+                tests.test_model_manifest
+                tests.test_probe_rec_shape_metadata
+                tests.test_small_contracts
                 tests.test_experimental_ops tests.test_small_ocr_baseline)
     set_tests_properties(model_analysis PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")

@@ -227,8 +227,6 @@ bundles as versioned ZIP/TAR.GZ assets when the release workflow runs.
 - [Supported operators and model analysis](docs/SUPPORTED_OPS_V0.md)
 - [Supported model status](docs/supported-models.md) and
   [PP-OCRv6 Small analysis](docs/ppocrv6-small-analysis.md)
-- [Supported model status](docs/supported-models.md) and
-  [PP-OCRv6 Small analysis](docs/ppocrv6-small-analysis.md)
 - [C API and ownership rules](docs/c-api.md)
 - [Kernel scope and reference tests](docs/scalar-kernels.md)
 - [REC, CLS, DET, and full-OCR pipelines](docs/rec-pipeline.md),

@@ -11,6 +11,10 @@ from pathlib import Path
 import numpy as np
 import onnxruntime as ort
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from converter.ppocr_contracts import PP_OCRV6_REC_WIDTHS
+
 
 def nonnegative_float(text: str) -> float:
     value = float(text)
@@ -59,7 +63,7 @@ def main() -> int:
     parser.add_argument("--max-mean-abs-error", type=nonnegative_float)
     parser.add_argument("--max-fraction-over", type=nonnegative_float)
     args = parser.parse_args()
-    widths = args.widths or [192, 320, 480, 640, 960]
+    widths = args.widths or list(PP_OCRV6_REC_WIDTHS)
     session = ort.InferenceSession(str(args.model), providers=["CPUExecutionProvider"])
     results = []
     for width in widths:

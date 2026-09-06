@@ -13,19 +13,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-REQUIRED_WIDTHS = (192, 320, 480, 640, 960)
-EXPECTED_OUTPUTS = {
-    "Shape.1": lambda width: [1, 120, 1, width // 8],
-    "Shape.3": lambda width: [1, 120, 1, width // 8],
-    "Shape.7": lambda width: [1, 8, width // 8, 15],
-    "Shape.13": lambda width: [1, 8, width // 8, 15],
-    "Slice.1": lambda width: [width // 8],
-    "helper.slice.0": lambda width: [1, 120],
-}
+from converter.ppocr_contracts import (
+    PP_OCRV6_REC_WIDTHS,
+    PP_OCRV6_SMALL_REC_BASE_SHAPE,
+    SMALL_REC_DYNAMIC_OUTPUTS,
+    small_rec_metadata,
+)
+
+
+REQUIRED_WIDTHS = PP_OCRV6_REC_WIDTHS
+EXPECTED_OUTPUTS = set(SMALL_REC_DYNAMIC_OUTPUTS)
 
 
 def load_report(path: Path) -> dict[str, Any]:
@@ -49,7 +52,7 @@ def validate_report(
     input_info = report.get("input")
     if not isinstance(input_info, dict):
         raise ValueError("metadata report is missing input metadata")
-    if input_info.get("base_shape") != [1, 3, 48, 1]:
+    if input_info.get("base_shape") != list(PP_OCRV6_SMALL_REC_BASE_SHAPE):
         raise ValueError(f"unexpected REC base shape: {input_info.get('base_shape')!r}")
     widths = input_info.get("widths")
     if not isinstance(widths, list) or any(not isinstance(width, int) for width in widths):
@@ -64,7 +67,7 @@ def validate_report(
     if not isinstance(nodes, list):
         raise ValueError("metadata report is missing metadata_nodes")
     outputs = [output for node in nodes for output in node.get("outputs", [])]
-    if set(outputs) != set(EXPECTED_OUTPUTS) or len(outputs) != len(EXPECTED_OUTPUTS):
+    if set(outputs) != EXPECTED_OUTPUTS or len(outputs) != len(EXPECTED_OUTPUTS):
         raise ValueError(f"metadata node outputs do not match the contract: {outputs!r}")
     if any(node.get("op") not in {"Shape", "Slice"} for node in nodes):
         raise ValueError("metadata_nodes contains a non Shape/Slice operation")
@@ -83,7 +86,7 @@ def validate_report(
             raise ValueError("metadata probes must have unique integer widths")
         if shape != [1, 3, 48, width] or not isinstance(metadata, dict):
             raise ValueError(f"probe {width} has an invalid input shape or metadata map")
-        if set(metadata) != set(EXPECTED_OUTPUTS):
+        if set(metadata) != EXPECTED_OUTPUTS:
             raise ValueError(f"probe {width} metadata outputs do not match the contract")
         by_width[width] = metadata
 
@@ -94,12 +97,10 @@ def validate_report(
         if metadata is None:
             raise ValueError(f"metadata report has no probe for width {width}")
     for width, metadata in by_width.items():
-        for name, expected_fn in EXPECTED_OUTPUTS.items():
+        for name, expected in small_rec_metadata(width).items():
             actual = metadata[name]
-            if actual != expected_fn(width):
-                raise ValueError(
-                    f"probe {width} output {name} is {actual!r}, expected {expected_fn(width)!r}"
-                )
+            if actual != expected:
+                raise ValueError(f"probe {width} output {name} is {actual!r}, expected {expected!r}")
 
     return {
         "schema_version": 1,
