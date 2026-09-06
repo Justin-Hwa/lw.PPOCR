@@ -1,0 +1,222 @@
+#include "cpu_features.h"
+#include "lw_infer.h"
+#include "packed_conv_internal.h"
+
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#if defined(_WIN32)
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#else
+#  include <time.h>
+#endif
+
+typedef struct benchmark_case {
+    const char* name;
+    uint32_t input_channels;
+    uint32_t output_channels;
+    uint32_t height;
+} benchmark_case;
+
+static double monotonic_seconds(void) {
+#if defined(_WIN32)
+    LARGE_INTEGER counter;
+    LARGE_INTEGER frequency;
+    if (!QueryPerformanceFrequency(&frequency) || !QueryPerformanceCounter(&counter) ||
+        frequency.QuadPart == 0) {
+        return 0.0;
+    }
+    return (double)counter.QuadPart / (double)frequency.QuadPart;
+#else
+    struct timespec value;
+    if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) {
+        return 0.0;
+    }
+    return (double)value.tv_sec + (double)value.tv_nsec * 1.0e-9;
+#endif
+}
+
+static int parse_positive_u32(const char* text, uint32_t* value) {
+    char* end = NULL;
+    unsigned long parsed;
+    if (text == NULL || value == NULL || text[0] == '\0' || text[0] == '-') {
+        return 0;
+    }
+    parsed = strtoul(text, &end, 10);
+    if (end == text || *end != '\0' || parsed == 0ul || parsed > UINT32_MAX) {
+        return 0;
+    }
+    *value = (uint32_t)parsed;
+    return 1;
+}
+
+static int allocation_size(uint64_t count, size_t element_size, size_t* bytes) {
+    if (bytes == NULL || element_size == 0u || count > SIZE_MAX / element_size) {
+        return 0;
+    }
+    *bytes = (size_t)count * element_size;
+    return 1;
+}
+
+static void fill_values(float* values, uint64_t count, uint32_t seed) {
+    uint64_t index;
+    uint32_t state = seed;
+    for (index = 0u; index < count; ++index) {
+        state = state * 1664525u + 1013904223u;
+        values[(size_t)index] = (float)((int32_t)(state >> 9u) % 1021) / 511.0f;
+    }
+}
+
+static uint64_t checksum_bytes(const void* data, size_t bytes) {
+    const unsigned char* values = (const unsigned char*)data;
+    uint64_t hash = UINT64_C(1469598103934665603);
+    size_t index;
+    for (index = 0u; index < bytes; ++index) {
+        hash ^= values[index];
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static int run_case(const benchmark_case* item, uint32_t target_width, uint32_t iterations,
+                    int first) {
+    uint32_t spatial_width = target_width / 4u;
+    uint64_t spatial = (uint64_t)item->height * spatial_width;
+    uint64_t input_count = (uint64_t)item->input_channels * spatial;
+    uint64_t weight_count = (uint64_t)item->input_channels * item->output_channels;
+    uint64_t output_count = (uint64_t)item->output_channels * spatial;
+    uint64_t packed_count = 0u;
+    size_t input_bytes;
+    size_t weight_bytes;
+    size_t output_bytes;
+    size_t packed_bytes;
+    float* input = NULL;
+    float* weights = NULL;
+    float* bias = NULL;
+    float* packed = NULL;
+    float* reference = NULL;
+    float* output = NULL;
+    int32_t input_dimensions[4] = {1, 0, 0, 0};
+    int32_t output_dimensions[4] = {1, 0, 0, 0};
+    double scalar_started;
+    double scalar_finished;
+    double dispatched_started;
+    double dispatched_finished;
+    double scalar_ms;
+    double dispatched_ms;
+    uint64_t checksum;
+    uint32_t iteration;
+    int ok = 0;
+
+    if (!lw_packed_conv1x1_weight_count(item->input_channels, item->output_channels,
+                                        &packed_count) ||
+        !allocation_size(input_count, sizeof(float), &input_bytes) ||
+        !allocation_size(weight_count, sizeof(float), &weight_bytes) ||
+        !allocation_size(output_count, sizeof(float), &output_bytes) ||
+        !allocation_size(packed_count, sizeof(float), &packed_bytes) ||
+        item->input_channels > INT32_MAX || item->output_channels > INT32_MAX ||
+        item->height > INT32_MAX || spatial_width > INT32_MAX) {
+        fprintf(stderr, "invalid benchmark geometry: %s\n", item->name);
+        goto cleanup;
+    }
+    input = (float*)malloc(input_bytes);
+    weights = (float*)malloc(weight_bytes);
+    bias = (float*)malloc((size_t)item->output_channels * sizeof(float));
+    packed = (float*)malloc(packed_bytes);
+    reference = (float*)malloc(output_bytes);
+    output = (float*)malloc(output_bytes);
+    if (input == NULL || weights == NULL || bias == NULL || packed == NULL ||
+        reference == NULL || output == NULL) {
+        fprintf(stderr, "benchmark allocation failed: %s\n", item->name);
+        goto cleanup;
+    }
+    fill_values(input, input_count, 17u + item->input_channels);
+    fill_values(weights, weight_count, 31u + item->output_channels);
+    fill_values(bias, item->output_channels, 47u + item->height);
+    lw_pack_conv1x1_weights_f32(weights, item->input_channels, item->output_channels, packed);
+    input_dimensions[1] = (int32_t)item->input_channels;
+    input_dimensions[2] = (int32_t)item->height;
+    input_dimensions[3] = (int32_t)spatial_width;
+    output_dimensions[1] = (int32_t)item->output_channels;
+    output_dimensions[2] = (int32_t)item->height;
+    output_dimensions[3] = (int32_t)spatial_width;
+
+    lw_scalar_packed_conv1x1_f32(input, packed, bias, reference, input_dimensions,
+                                 output_dimensions);
+    lw_packed_conv1x1_f32(input, packed, bias, output, input_dimensions, output_dimensions);
+    if (memcmp(reference, output, output_bytes) != 0) {
+        fprintf(stderr, "packed Conv result mismatch: %s\n", item->name);
+        goto cleanup;
+    }
+
+    scalar_started = monotonic_seconds();
+    for (iteration = 0u; iteration < iterations; ++iteration) {
+        lw_scalar_packed_conv1x1_f32(input, packed, bias, reference, input_dimensions,
+                                     output_dimensions);
+    }
+    scalar_finished = monotonic_seconds();
+    dispatched_started = monotonic_seconds();
+    for (iteration = 0u; iteration < iterations; ++iteration) {
+        lw_packed_conv1x1_f32(input, packed, bias, output, input_dimensions, output_dimensions);
+    }
+    dispatched_finished = monotonic_seconds();
+    if (scalar_started <= 0.0 || scalar_finished <= scalar_started ||
+        dispatched_started <= 0.0 || dispatched_finished <= dispatched_started ||
+        memcmp(reference, output, output_bytes) != 0) {
+        fprintf(stderr, "packed Conv benchmark failed: %s\n", item->name);
+        goto cleanup;
+    }
+    scalar_ms = (scalar_finished - scalar_started) * 1000.0 / iterations;
+    dispatched_ms = (dispatched_finished - dispatched_started) * 1000.0 / iterations;
+    checksum = checksum_bytes(output, output_bytes);
+    printf("%s{\"name\":\"%s\",\"input_channels\":%u,\"output_channels\":%u,"
+           "\"height\":%u,\"width\":%u,\"scalar_ms\":%.6f,"
+           "\"dispatched_ms\":%.6f,\"speedup\":%.6f,\"checksum\":\"0x%016" PRIx64
+           "\"}",
+           first ? "" : ",", item->name, item->input_channels, item->output_channels,
+           item->height, spatial_width, scalar_ms, dispatched_ms, scalar_ms / dispatched_ms,
+           checksum);
+    ok = 1;
+
+cleanup:
+    free(output);
+    free(reference);
+    free(packed);
+    free(bias);
+    free(weights);
+    free(input);
+    return ok;
+}
+
+int main(int argc, char** argv) {
+    static const benchmark_case cases[] = {
+        {"early-96x192", 96u, 192u, 12u},
+        {"middle-192x384", 192u, 384u, 6u},
+        {"late-384x768", 384u, 768u, 3u},
+        {"late-768x384", 768u, 384u, 3u},
+    };
+    uint32_t target_width = 960u;
+    uint32_t iterations = 3u;
+    size_t index;
+    if (argc > 3 || (argc >= 2 && !parse_positive_u32(argv[1], &target_width)) ||
+        (argc >= 3 && !parse_positive_u32(argv[2], &iterations)) ||
+        (target_width != 320u && target_width != 960u) || iterations > 100u) {
+        fprintf(stderr, "usage: packed-conv1x1-benchmark-driver [target-width=960] "
+                        "[iterations=3]\n");
+        return 2;
+    }
+    printf("{\"schema_version\":1,\"backend\":\"%s\",\"target_width\":%u,"
+           "\"iterations\":%u,\"cases\":[",
+           lw_simd_level_name(lw_detect_simd_level()), target_width, iterations);
+    for (index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index) {
+        if (!run_case(&cases[index], target_width, iterations, index == 0u)) {
+            return 1;
+        }
+    }
+    printf("]}\n");
+    return 0;
+}

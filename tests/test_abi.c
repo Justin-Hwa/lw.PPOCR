@@ -79,7 +79,7 @@ int main(void) {
                    session_options.struct_size == sizeof(session_options) &&
                    session_info.struct_size == sizeof(session_info) &&
                    recognizer_options.struct_size == sizeof(recognizer_options) &&
-                   recognizer_options.target_width == 320u &&
+                   recognizer_options.target_width == 960u &&
                    recognizer_info.struct_size == sizeof(recognizer_info) &&
                    recognition_result.struct_size == sizeof(recognition_result) &&
                    classifier_options.struct_size == sizeof(classifier_options) &&

@@ -151,7 +151,7 @@ int main(int argc, char** argv) {
     char* reference_text = NULL;
     uint32_t iterations;
     uint32_t workers;
-    uint32_t rec_target_width = 320u;
+    uint32_t rec_target_width = 960u;
     uint32_t det_intra_op_threads = 0u;
     uint32_t iteration;
     uint32_t reference_line_count;

@@ -8,6 +8,7 @@
 
 #include "lwm_read.h"
 #include "packed_conv_internal.h"
+#include "packed_conv3x3_internal.h"
 #include "parallel_internal.h"
 #include "scalar_kernels.h"
 #include "session_internal.h"
@@ -123,10 +124,14 @@ static uint32_t parallel_conv_worker_count(const lw_session* session,
         return 1u;
     }
     if (context->packed != 0u) {
-        if (output_channels % LW_PACKED_CONV1X1_OUTPUT_TILE != 0u) {
+        const uint32_t output_tile =
+            context->packed == LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8
+                ? LW_PACKED_CONV3X3_STRIDE2_OUTPUT_TILE
+                : LW_PACKED_CONV1X1_OUTPUT_TILE;
+        if (output_channels % output_tile != 0u) {
             return 1u;
         }
-        maximum_workers = output_channels / LW_PACKED_CONV1X1_OUTPUT_TILE;
+        maximum_workers = output_channels / output_tile;
     } else {
         maximum_workers = output_channels;
     }
@@ -148,7 +153,10 @@ static void execute_parallel_conv_slice(void* opaque, uint32_t worker_index,
                                         uint32_t worker_count) {
     lw_parallel_conv_context* context = (lw_parallel_conv_context*)opaque;
     uint32_t output_channels = (uint32_t)context->output_dimensions[1];
-    uint32_t item_size = context->packed != 0u ? LW_PACKED_CONV1X1_OUTPUT_TILE : 1u;
+    uint32_t item_size =
+        context->packed == LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8
+            ? LW_PACKED_CONV3X3_STRIDE2_OUTPUT_TILE
+            : (context->packed != 0u ? LW_PACKED_CONV1X1_OUTPUT_TILE : 1u);
     uint32_t item_count = output_channels / item_size;
     uint32_t channel_begin =
         (uint32_t)(((uint64_t)item_count * worker_index) / worker_count) * item_size;
@@ -173,10 +181,19 @@ static void execute_parallel_conv_slice(void* opaque, uint32_t worker_index,
     memcpy(output_dimensions, context->output_dimensions, sizeof(output_dimensions));
     output_dimensions[1] = (int32_t)channel_count;
     weight_dimensions[0] = (int32_t)channel_count;
-    if (context->packed != 0u) {
+    if (context->packed == LW_PREPARED_NODE_CONV1X1_PACKED4) {
         uint32_t input_channels = (uint32_t)input_dimensions[1];
         weights = context->weights + (size_t)((uint64_t)channel_begin * input_channels);
         lw_packed_conv1x1_f32(input, weights, bias, output, input_dimensions, output_dimensions);
+        context->statuses[worker_index] = LW_STATUS_OK;
+        return;
+    }
+    if (context->packed == LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8) {
+        const uint32_t input_channels = (uint32_t)input_dimensions[1];
+        weights = context->weights +
+                  (size_t)((uint64_t)channel_begin * input_channels * 9u);
+        lw_packed_conv3x3_stride2_pad1_f32(
+            input, weights, bias, output, input_dimensions, output_dimensions);
         context->statuses[worker_index] = LW_STATUS_OK;
         return;
     }
@@ -299,6 +316,27 @@ static lw_status dispatch_node(lw_session* session, const uint8_t* node, uint32_
             }
             lw_packed_conv1x1_f32(inputs[0], packed_weights, input_count == 3u ? inputs[2] : NULL,
                                   output, input_tensors[0]->dimensions, output_tensor->dimensions);
+            return LW_STATUS_OK;
+        }
+        if (session->prepared_nodes != NULL &&
+            session->prepared_nodes[node_index].kind ==
+                LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8) {
+            const lw_prepared_node* prepared = &session->prepared_nodes[node_index];
+            const float* packed_weights =
+                (const float*)(const void*)(session->packed_weights +
+                                            (size_t)prepared->packed_weight_offset);
+            parallel_status = dispatch_parallel_conv(
+                session, inputs[0], packed_weights,
+                input_count == 3u ? inputs[2] : NULL, output,
+                input_tensors[0]->dimensions, input_tensors[1]->dimensions,
+                output_tensor->dimensions, kernel, strides, dilations, pads, groups,
+                LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8, profile);
+            if (parallel_status == LW_STATUS_OK) {
+                return LW_STATUS_OK;
+            }
+            lw_packed_conv3x3_stride2_pad1_f32(
+                inputs[0], packed_weights, input_count == 3u ? inputs[2] : NULL,
+                output, input_tensors[0]->dimensions, output_tensor->dimensions);
             return LW_STATUS_OK;
         }
         parallel_status = dispatch_parallel_conv(

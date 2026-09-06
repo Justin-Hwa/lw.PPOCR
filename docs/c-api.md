@@ -119,7 +119,7 @@ and dictionary. Its options have these defaults:
 
 | Field | Default | Meaning |
 |---|---:|---|
-| `target_width` | 320 | Model input width; input height is fixed at 48 |
+| `target_width` | 960 | Model input width; input height is fixed at 48 |
 | `max_model_file_size` | 1 GiB | Model loader limit |
 | `max_workspace_size` | 512 MiB | Planned session workspace limit |
 | `max_tensor_size` | 256 MiB | Per-tensor limit |
@@ -336,13 +336,13 @@ detector reading order. A crop exceeding `max_crop_pixels` returns
 
 ### Full OCR quality profile
 
-`lw_ocr_options_init` keeps the public `recognizer.target_width` default at
-`320` for compatibility. Applications that process full pages or long text
-lines may set `options.recognizer.target_width = 960`; in composed OCR, a value
-above `320` enables adaptive line widths, and the runtime selects an appropriate
-width from `192/320/480/640/960` up to that maximum. This does not change the
-public API default. The official `lw-ocr-ppm` demo uses this quality-oriented
-`960` maximum by default, while benchmark tools keep their historical defaults.
+`lw_ocr_options_init` uses `960` as the public `recognizer.target_width` default
+so ordinary full-page and long-text callers retain enough horizontal detail.
+In composed OCR, the runtime selects an appropriate width from
+`192/320/480/640/960` up to that maximum. Applications that need a faster,
+lower-memory profile may explicitly set `options.recognizer.target_width = 320`.
+The official benchmark commands pass their historical width explicitly when
+reproducing the published 320-pixel baseline.
 
 ```c
 lw_ocr* ocr = NULL;

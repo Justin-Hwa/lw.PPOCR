@@ -7,6 +7,7 @@
  */
 #include "lwm_read.h"
 #include "packed_conv_internal.h"
+#include "packed_conv3x3_internal.h"
 #include "packed_matmul_internal.h"
 #include "parallel_internal.h"
 #include "cpu_features.h"
@@ -181,6 +182,70 @@ static int prepared_matmul_node(const lw_session* session, lw_simd_level simd_le
 #endif
 }
 
+static int prepared_stride2_conv3x3_node(
+    const lw_session* session, lw_simd_level simd_level, uint32_t node_index,
+    uint32_t* weight_tensor_index, uint64_t* packed_weight_count) {
+#if defined(_M_X64) || defined(__x86_64__)
+    const lw_model* model = session->model;
+    const uint8_t* node =
+        model->bytes + (size_t)model->node_offset + (size_t)node_index * LWM_V0_NODE_SIZE;
+    const uint16_t input_count = lwm_read_u16(node + 2u);
+    uint64_t param_offset;
+    const uint8_t* params;
+    uint32_t input_index;
+    uint32_t weights_index;
+    uint32_t output_index;
+    const lw_runtime_tensor* input;
+    const lw_runtime_tensor* weights;
+    const lw_runtime_tensor* output;
+    if (!lw_simd_level_is_avx2(simd_level) || lwm_read_u16(node) != LW_OP_CONV ||
+        (input_count != 2u && input_count != 3u)) {
+        return 0;
+    }
+    param_offset = lwm_read_u64(node + 56u);
+    params = model->bytes + (size_t)param_offset;
+    input_index = lwm_read_u32(node + 8u);
+    weights_index = lwm_read_u32(node + 12u);
+    output_index = lwm_read_u32(node + 40u);
+    input = &session->tensors[input_index];
+    weights = &session->tensors[weights_index];
+    output = &session->tensors[output_index];
+    if (input->dtype != LW_DTYPE_F32 || input->rank != 4u ||
+        weights->dtype != LW_DTYPE_F32 || weights->rank != 4u ||
+        output->dtype != LW_DTYPE_F32 || output->rank != 4u ||
+        (weights->flags & LWM_V0_TENSOR_FLAG_CONSTANT) == 0u ||
+        lwm_read_u32(params + 4u) != 1u || lwm_read_i32(params + 8u) != 3 ||
+        lwm_read_i32(params + 12u) != 3 || lwm_read_i32(params + 16u) != 2 ||
+        lwm_read_i32(params + 20u) != 2 || lwm_read_i32(params + 24u) != 1 ||
+        lwm_read_i32(params + 28u) != 1 || lwm_read_i32(params + 32u) != 1 ||
+        lwm_read_i32(params + 36u) != 1 || lwm_read_i32(params + 40u) != 1 ||
+        lwm_read_i32(params + 44u) != 1 ||
+        weights->dimensions[0] != output->dimensions[1] ||
+        weights->dimensions[1] != input->dimensions[1] || weights->dimensions[2] != 3 ||
+        weights->dimensions[3] != 3 || input->dimensions[0] != output->dimensions[0] ||
+        (uint64_t)(uint32_t)input->dimensions[3] <
+            UINT64_C(2) * (uint32_t)input->dimensions[2] ||
+        output->dimensions[1] < (int32_t)LW_PACKED_CONV3X3_STRIDE2_OUTPUT_TILE ||
+        output->dimensions[1] %
+                (int32_t)LW_PACKED_CONV3X3_STRIDE2_OUTPUT_TILE !=
+            0 ||
+        !lw_packed_conv3x3_stride2_weight_count(
+            (uint32_t)input->dimensions[1], (uint32_t)output->dimensions[1],
+            packed_weight_count)) {
+        return 0;
+    }
+    *weight_tensor_index = weights_index;
+    return 1;
+#else
+    (void)session;
+    (void)simd_level;
+    (void)node_index;
+    (void)weight_tensor_index;
+    (void)packed_weight_count;
+    return 0;
+#endif
+}
+
 static const float* constant_f32_data(const lw_session* session, uint32_t tensor_index) {
     const lw_model* model = session->model;
     const uint8_t* disk =
@@ -212,6 +277,10 @@ static lw_status prepare_constant_weights(lw_session* session, lw_error* error) 
         if (prepared_pointwise_node(session, simd_level, node_index, &weight_tensor_index,
                                     &packed_weight_count)) {
             prepared->kind = LW_PREPARED_NODE_CONV1X1_PACKED4;
+        } else if (prepared_stride2_conv3x3_node(
+                       session, simd_level, node_index, &weight_tensor_index,
+                       &packed_weight_count)) {
+            prepared->kind = LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8;
         } else if (prepared_matmul_node(session, simd_level, node_index, &weight_tensor_index,
                                         &packed_weight_count)) {
             prepared->kind = LW_PREPARED_NODE_MATMUL_PACKED16;
@@ -261,6 +330,19 @@ static lw_status prepare_constant_weights(lw_session* session, lw_error* error) 
             input_index = lwm_read_u32(node + 8u);
             output_index = lwm_read_u32(node + 40u);
             lw_pack_conv1x1_weights_f32(
+                constant_f32_data(session, weight_tensor_index),
+                (uint32_t)session->tensors[input_index].dimensions[1],
+                (uint32_t)session->tensors[output_index].dimensions[1],
+                (float*)(void*)(session->packed_weights +
+                                (size_t)prepared->packed_weight_offset));
+        } else if (prepared->kind == LW_PREPARED_NODE_CONV3X3_STRIDE2_PACKED8 &&
+                   prepared_stride2_conv3x3_node(
+                       session, simd_level, node_index, &weight_tensor_index,
+                       &packed_weight_count) &&
+                   packed_weight_count == prepared->packed_weight_count) {
+            input_index = lwm_read_u32(node + 8u);
+            output_index = lwm_read_u32(node + 40u);
+            lw_pack_conv3x3_stride2_weights_f32(
                 constant_f32_data(session, weight_tensor_index),
                 (uint32_t)session->tensors[input_index].dimensions[1],
                 (uint32_t)session->tensors[output_index].dimensions[1],

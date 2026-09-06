@@ -49,7 +49,7 @@ class FullOcrProfileTest(unittest.TestCase):
             str(workers),
         ]
         if target_width is not None or det_intra_op_threads is not None:
-            command.append(str(target_width if target_width is not None else 320))
+            command.append(str(target_width if target_width is not None else 960))
         if det_intra_op_threads is not None:
             command.append(str(det_intra_op_threads))
         completed = subprocess.run(
@@ -71,7 +71,7 @@ class FullOcrProfileTest(unittest.TestCase):
                 self.assertEqual(report["schema_version"], 1)
                 self.assertEqual(report["iterations"], 1)
                 self.assertEqual(report["workers"], workers)
-                self.assertEqual(report["rec_target_width"], 320)
+                self.assertEqual(report["rec_target_width"], 960)
                 self.assertEqual(report["lines"], 16)
 
                 parallel = report["parallel"]
@@ -148,7 +148,7 @@ class FullOcrProfileTest(unittest.TestCase):
                     rec_width["target_width_sum"], rec_width["resized_width_sum"]
                 )
                 self.assertGreater(rec_width["mean_resized_width"], 0.0)
-                self.assertLessEqual(rec_width["mean_resized_width"], 320.0)
+                self.assertLessEqual(rec_width["mean_resized_width"], 960.0)
                 self.assertGreaterEqual(rec_width["mean_padding_ratio"], 0.0)
                 self.assertLessEqual(rec_width["mean_padding_ratio"], 1.0)
                 histogram = rec_width["histogram"]

@@ -35,6 +35,6 @@ Run `lw.PPOCR.C.HttpServer --help` for command-line options. It defaults to
 directory. `--ocr-workers 1..16` controls independent CLS/REC line workers;
 native x64 uses the online logical-processor count capped at 8 and x86 uses 1.
 `--rec-max-width` accepts 192, 320, 480, 640, or 960 and caps the adaptive
-REC input width; its default is 320.
+REC input width; its default is 960.
 The server still serializes requests through one OCR handle, while lines inside
 that request can run in parallel.

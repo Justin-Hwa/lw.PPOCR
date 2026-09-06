@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LW_REC_DEFAULT_TARGET_WIDTH 320u
+#define LW_REC_DEFAULT_TARGET_WIDTH 960u
 #define LW_REC_DEFAULT_MAX_IMAGE_PIXELS UINT64_C(40000000)
 
 struct lw_recognizer {

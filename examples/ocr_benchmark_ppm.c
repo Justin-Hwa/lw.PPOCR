@@ -182,7 +182,7 @@ static int benchmark_main(int argc, char** argv) {
     uint32_t warmup_count = 2u;
     uint32_t iteration_count = 10u;
     uint32_t worker_count = 0u;
-    uint32_t rec_target_width = 320u;
+    uint32_t rec_target_width = 960u;
 #if defined(LW_OCR_BENCHMARK_INTERNAL)
     uint32_t det_intra_op_threads = 0u;
 #endif
@@ -216,7 +216,7 @@ static int benchmark_main(int argc, char** argv) {
         iteration_count > LW_OCR_BENCHMARK_MAX_ITERATIONS) {
         fprintf(stderr, "usage: lw-ocr-benchmark <det.lwm> <cls.lwm> <rec.lwm> "
                         "<dictionary.txt> <image.ppm> [warmup=2] [iterations=10] "
-                        "[workers=platform-default] [rec-target-width=320]"
+                        "[workers=platform-default] [rec-target-width=960]"
 #if defined(LW_OCR_BENCHMARK_INTERNAL)
                         " [det-intra-op=auto]"
 #endif

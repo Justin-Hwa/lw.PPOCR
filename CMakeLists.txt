@@ -177,6 +177,7 @@ endif()
 
 set(LW_PPOCR_C_SOURCES
     src/kernels/packed_conv.c
+    src/kernels/packed_conv3x3.c
     src/kernels/packed_matmul.c
     src/kernels/scalar_activation.c
     src/kernels/scalar_conv.c
@@ -254,6 +255,7 @@ string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" LW_SYSTEM_PROCESSOR_LOWER)
 # established x86 kernels and golden checksums.
 set(LW_REPRODUCIBLE_CONV_SOURCES
     src/kernels/packed_conv.c
+    src/kernels/packed_conv3x3.c
     src/kernels/scalar_conv.c
     src/simd/lsx_packed_conv1x1.c
     src/simd/neon_conv3x3.c
@@ -1110,6 +1112,46 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_conv_kernels_reference.py"
                 --driver "$<TARGET_FILE:conv-reference-driver>")
+
+    add_executable(packed-conv1x1-benchmark-driver
+        tests/packed_conv1x1_benchmark_driver.c)
+    target_link_libraries(packed-conv1x1-benchmark-driver PRIVATE lw_ppocr_c)
+    target_include_directories(packed-conv1x1-benchmark-driver PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/kernels"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/simd")
+    target_compile_features(packed-conv1x1-benchmark-driver PRIVATE c_std_11)
+    if(MSVC)
+        target_compile_options(packed-conv1x1-benchmark-driver PRIVATE /W4 /WX /utf-8)
+    else()
+        target_compile_options(packed-conv1x1-benchmark-driver PRIVATE
+            -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(
+        NAME packed_conv1x1_benchmark_smoke
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_packed_conv1x1_benchmark.py"
+                --driver "$<TARGET_FILE:packed-conv1x1-benchmark-driver>")
+    set_tests_properties(packed_conv1x1_benchmark_smoke PROPERTIES TIMEOUT 120)
+
+    add_executable(conv3x3-stride2-benchmark-driver
+        tests/conv3x3_stride2_benchmark_driver.c)
+    target_link_libraries(conv3x3-stride2-benchmark-driver PRIVATE lw_ppocr_c)
+    target_include_directories(conv3x3-stride2-benchmark-driver PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/kernels"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/simd")
+    target_compile_features(conv3x3-stride2-benchmark-driver PRIVATE c_std_11)
+    if(MSVC)
+        target_compile_options(conv3x3-stride2-benchmark-driver PRIVATE /W4 /WX /utf-8)
+    else()
+        target_compile_options(conv3x3-stride2-benchmark-driver PRIVATE
+            -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(
+        NAME conv3x3_stride2_benchmark_smoke
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_conv3x3_stride2_benchmark.py"
+                --driver "$<TARGET_FILE:conv3x3-stride2-benchmark-driver>")
+    set_tests_properties(conv3x3_stride2_benchmark_smoke PROPERTIES TIMEOUT 120)
     set_tests_properties(conv_kernel_reference PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 

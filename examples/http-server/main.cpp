@@ -64,7 +64,7 @@ struct Config {
     uint32_t rec_max_width;
 
     Config() : host("127.0.0.1"), port(8787), use_classifier(true),
-               ocr_workers(DefaultOcrWorkers()), rec_max_width(320u) {}
+               ocr_workers(DefaultOcrWorkers()), rec_max_width(960u) {}
 };
 
 struct BgrImage {

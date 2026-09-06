@@ -267,7 +267,9 @@ the longer 10-iteration width-320 result is retained in the table above.
 | 960 | 4.55% / 4/10 (40%) | 1,491.09 ms | 648.62 ms |
 
 The 192 bucket is faster, but its accuracy loss is too large for a general
-default. Width 320 remains the best current Small trade-off on this corpus. At
+default. Width 320 is the best measured Small speed/accuracy trade-off on this
+corpus, while the production default remains 960 to preserve detail for
+ordinary long-text callers. At
 that width the REC profile is dominated by Conv (about 127 ms over five graph
 iterations), followed by MatMul (about 18 ms); this makes the next optimization
 target the Small REC Conv path, especially the repeated 1x1 and early 3x3

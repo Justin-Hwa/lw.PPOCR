@@ -458,6 +458,76 @@ All results in this document describe one machine, compiler, model, and
 fixture. They should be reproduced on target machines before being used for
 capacity planning.
 
+## Small REC packed 1x1 Conv microbenchmark
+
+Small REC spends most of its graph time in Conv, with repeated pointwise layers
+using substantially larger channel counts than Tiny. The private
+`packed-conv1x1-benchmark-driver` isolates four representative geometries at
+REC widths 320 and 960. It first requires the dispatched result to be
+byte-identical to the scalar packed implementation, then reports scalar and
+selected-backend latency as JSON. CI runs width 320 with one iteration as a
+correctness and output-contract smoke test; it deliberately does not enforce a
+timing threshold across unlike CPUs.
+
+On the current Windows x64 AVX2 machine, 20-iteration width-960 measurements
+were:
+
+| Input channels | Output channels | Spatial plane | Scalar | AVX2 dispatch | Speedup |
+|---:|---:|---:|---:|---:|---:|
+| 96 | 192 | 12x240 | 36.563 ms | 1.328 ms | 27.54x |
+| 192 | 384 | 6x240 | 72.523 ms | 2.507 ms | 28.93x |
+| 384 | 768 | 3x240 | 145.013 ms | 4.297 ms | 33.75x |
+| 768 | 384 | 3x240 | 150.654 ms | 4.348 ms | 34.65x |
+
+Two wider schedules were rejected after measurement. An eight-output schedule
+failed to produce a stable end-to-end or operator-level improvement. A x64
+AVX2 `4 outputs x 24 spatial values` schedule also preserved byte-identical
+results, but a serial 20-iteration comparison regressed every representative
+Small REC shape versus the existing `4 x 16` kernel: about 26% to 61% on the
+first three width-960 cases, with an even larger unstable regression on the
+highest-channel case. Twelve live accumulators, three input vectors, and a
+broadcast weight exhaust the sixteen-register YMM file and leave too little
+freedom for the compiler scheduler. Future
+packed-layout or microkernel changes should use this driver for isolated A/B
+evidence, followed by complete Small OCR checksum and latency tests before
+being retained.
+
+## Small REC stride-2 3x3 Conv microbenchmark
+
+The Small REC width-960 node profile identified node 11 as the remaining
+ordinary 3x3 hotspot: `1x96x24x480 -> 1x48x12x240`, stride 2, dilation 1, and
+pad 1. The private `conv3x3-stride2-benchmark-driver` covers both this shape
+and the `1x3x48x960 -> 1x48x24x480` stem, with corresponding width-320 cases.
+It compares both the canonical automatic dispatch and an output-tile-8 packed
+weight path byte-for-byte with the portable specialized implementation before
+emitting JSON timings. CI runs a one-iteration width-320 contract smoke and
+does not enforce hardware-dependent timing thresholds.
+
+On the current Windows x64 AVX2 machine, ten-iteration width-960 measurements
+were:
+
+| Shape | Canonical AVX2 | Packed AVX2 | Reduction | Speedup |
+|---|---:|---:|---:|---:|
+| `3x48x960 -> 48x24x480` | 0.761 ms | 0.690 ms | 9.29% | 1.102x |
+| `96x24x480 -> 48x12x240` | 9.986 ms | 8.706 ms | 12.82% | 1.147x |
+
+Two existing alternatives were measured on the high-channel shape and
+rejected. The four-output path took 10.389 ms, about 7.7% slower than the
+eight-output path. The output-stream path took 16.865 ms, about 75.9% slower.
+Both remained byte-identical, so the result isolates performance rather than
+numeric behavior.
+
+The retained x64 AVX2 change packs eligible constant weights once during
+Session creation as `[OC/8][IC][3][3][8]`, then reuses the packed buffer for
+every execution. Eligibility is limited to group-1 stride-2 3x3 convolutions
+on long REC-like feature maps; DET and non-x64 backends remain unchanged. The
+two Small REC nodes add about 167 KiB per concrete REC Session.
+
+In three repeated 2+5 complete Small OCR runs at width 960, the one-worker
+median fell from 1439.74 ms to 1417.21 ms (1.56%), and the four-worker median
+fell from 612.46 ms to 603.58 ms (1.45%). The post-DET portion improved by
+1.67% and 2.81% respectively, with the same 16-line result contract.
+
 ## Full OCR line-level parallelism
 
 The OpenCV reference implementation gains multi-line throughput from multiple

@@ -78,7 +78,7 @@ README 英文版中的原生性能快照使用 `REC target_width = 320`。为保
 识别精度，C 完整 OCR Demo、离线 HTML、Java/JNI 和 C# Demo 使用 `REC target_width = 960`
 作为最大宽度。完整 OCR 现在会按文字行宽高比自动选择 192/320/480/640/960，按宽度
 排序后成批执行，并且每个 worker 最多只保留两个具体宽度的 REC Session；独立 REC API
-和公共 C ABI 不变。本机
+和公共 C ABI 默认值现在都是 960，如需复现旧的低延迟配置可显式设置为 320。本机
 fixed-960 与 adaptive-960 对比中，16 行样本单工作器降低 31.09%，四工作器降低 17.39%；
 长文字占比较高的文章样本分别降低 13.38% 和 5.61%，两组测试的 OCR 文本校验值均一致。
 
@@ -156,7 +156,7 @@ Windows 上使用 MSVC + Ninja 时，请先打开“x64 Native Tools Command Pro
 该完整 OCR Demo 默认使用质量优先配置 `rec_max_width=960`，并在运行时按文字行
 宽高比自适应选择 192/320/480/640/960。也可以显式传入 `192`、`320`、`480`、
 `640` 或 `960` 做对比；例如最后追加 `320` 可复现较低宽度配置。公共 C API 和
-独立 REC API 的默认 `target_width=320` 不变。
+独立 REC API 的默认 `target_width=960`，以保留常规长文本的识别细节。
 
 使用 Ninja 时，程序通常位于 `build/bin/` 或 CMake 输出中显示的位置，不需要
 `Release` 这一层目录。
