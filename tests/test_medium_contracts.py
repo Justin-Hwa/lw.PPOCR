@@ -6,13 +6,18 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.resolve_medium_validation_contract import (
     ALLOWED_DET_SHAPES,
     ALLOWED_WIDTHS,
     resolve_contract,
 )
-from tools.run_medium_validation import command_gate_arguments, recognized_text
+from tools.run_medium_validation import (
+    command_gate_arguments,
+    configure_utf8_output,
+    recognized_text,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +25,24 @@ CONTRACT = ROOT / "ci" / "ppocrv6-medium-validation.json"
 
 
 class MediumContractTests(unittest.TestCase):
+    def test_validation_console_uses_utf8_with_safe_error_fallback(self) -> None:
+        class ReconfigurableStream:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, str]] = []
+
+            def reconfigure(self, **kwargs: str) -> None:
+                self.calls.append(kwargs)
+
+        stdout = ReconfigurableStream()
+        stderr = ReconfigurableStream()
+        with mock.patch("tools.run_medium_validation.sys.stdout", stdout), mock.patch(
+            "tools.run_medium_validation.sys.stderr", stderr
+        ):
+            configure_utf8_output()
+        expected = [{"encoding": "utf-8", "errors": "backslashreplace"}]
+        self.assertEqual(stdout.calls, expected)
+        self.assertEqual(stderr.calls, expected)
+
     def test_pinned_contract_resolves_shared_assets_and_960_gate(self) -> None:
         resolved = resolve_contract(CONTRACT)
         self.assertEqual(

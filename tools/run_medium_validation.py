@@ -21,6 +21,14 @@ from tools.resolve_medium_validation_contract import resolve_contract
 LINE_RE = re.compile(r"^\d+ text=(?P<text>.*?) rec=")
 
 
+def configure_utf8_output() -> None:
+    """Keep Windows CI logs from failing when OCR output contains Unicode."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -107,6 +115,7 @@ def asset_summary(root: Path, resolved: dict[str, Any]) -> dict[str, dict[str, A
 
 
 def main() -> int:
+    configure_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--build-dir", type=Path, required=True)
