@@ -176,6 +176,7 @@ static int benchmark_main(int argc, char** argv) {
     double p95;
     lw_process_memory memory_after_warmup;
     lw_process_memory memory_final;
+    uint64_t observed_peak_rss;
     int64_t rss_growth;
     int result = 1;
     memset(&image, 0, sizeof(image));
@@ -249,6 +250,13 @@ static int benchmark_main(int argc, char** argv) {
         sum += latencies[index];
     }
     memory_final = process_memory();
+    observed_peak_rss = memory_final.peak_rss_bytes;
+    if (observed_peak_rss < memory_after_warmup.current_rss_bytes) {
+        observed_peak_rss = memory_after_warmup.current_rss_bytes;
+    }
+    if (observed_peak_rss < memory_final.current_rss_bytes) {
+        observed_peak_rss = memory_final.current_rss_bytes;
+    }
     memcpy(sorted, latencies, (size_t)iteration_count * sizeof(*sorted));
     qsort(sorted, iteration_count, sizeof(*sorted), compare_double);
     if ((iteration_count & 1u) != 0u) {
@@ -283,7 +291,7 @@ static int benchmark_main(int argc, char** argv) {
            (unsigned long long)memory_after_warmup.current_rss_bytes,
            (unsigned long long)memory_final.current_rss_bytes);
     printf("\"rss_growth_bytes\":%lld,\"peak_rss_bytes\":%llu}\n", (long long)rss_growth,
-           (unsigned long long)memory_final.peak_rss_bytes);
+           (unsigned long long)observed_peak_rss);
     result = 0;
 cleanup:
     free(sorted);

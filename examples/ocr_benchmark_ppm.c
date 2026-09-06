@@ -193,6 +193,7 @@ static int benchmark_main(int argc, char** argv) {
     double ocr_sum = 0.0;
     lw_process_memory memory_after_warmup;
     lw_process_memory memory_final;
+    uint64_t observed_peak_rss;
     lw_error error;
     lw_status status;
     int exit_code = 1;
@@ -325,6 +326,13 @@ static int benchmark_main(int argc, char** argv) {
     }
     memcpy(sorted, detector_times, (size_t)iteration_count * sizeof(*sorted));
     memory_final = process_memory();
+    observed_peak_rss = memory_final.peak_rss_bytes;
+    if (observed_peak_rss < memory_after_warmup.current_rss_bytes) {
+        observed_peak_rss = memory_after_warmup.current_rss_bytes;
+    }
+    if (observed_peak_rss < memory_final.current_rss_bytes) {
+        observed_peak_rss = memory_final.current_rss_bytes;
+    }
     printf("{\"schema_version\":1,\"backend\":\"%s\",", lw_simd_level_name(lw_detect_simd_level()));
     printf("\"image_width\":%u,\"image_height\":%u,\"lines\":%u,\"workers\":%u,"
            "\"rec_target_width\":%u,",
@@ -346,7 +354,7 @@ static int benchmark_main(int argc, char** argv) {
            "\"peak_rss_bytes\":%llu}\n",
            (unsigned long long)memory_after_warmup.current_rss_bytes,
            (unsigned long long)memory_final.current_rss_bytes,
-           (unsigned long long)memory_final.peak_rss_bytes);
+           (unsigned long long)observed_peak_rss);
     exit_code = 0;
 
 cleanup:

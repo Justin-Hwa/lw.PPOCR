@@ -48,7 +48,8 @@ class RecBenchmarkTest(unittest.TestCase):
             self.assertLessEqual(report["rss_growth_bytes"], 16 * 1024 * 1024)
         if report["peak_rss_bytes"] > 0 and report["rss_final_bytes"] > 0:
             self.assertGreaterEqual(
-                report["peak_rss_bytes"], report["rss_final_bytes"]
+                report["peak_rss_bytes"],
+                max(report["rss_after_warmup_bytes"], report["rss_final_bytes"]),
             )
 
 
