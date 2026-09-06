@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the pinned external Small validation pipeline on one native build."""
+"""Run the checked-in Small validation pipeline on one native build."""
 
 from __future__ import annotations
 
@@ -53,17 +53,20 @@ def executable(build_dir: Path, name: str) -> Path:
     raise FileNotFoundError(f"build executable not found: {name} under {build_dir}")
 
 
-def asset_path(directory: Path, *names: str) -> Path:
-    for name in names:
-        candidate = directory / name
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(f"validation asset not found under {directory}: {', '.join(names)}")
+def repository_path(root: Path, path: Path) -> Path:
+    resolved = path if path.is_absolute() else root / path
+    resolved = resolved.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"validation asset not found: {resolved}")
+    return resolved
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--assets-dir", type=Path, required=True)
+    parser.add_argument("--detector", type=Path, required=True)
+    parser.add_argument("--classifier", type=Path, required=True)
+    parser.add_argument("--recognizer", type=Path, required=True)
+    parser.add_argument("--dictionary", type=Path, required=True)
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
@@ -85,15 +88,14 @@ def main() -> int:
     )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    assets = args.assets_dir.resolve()
     build = args.build_dir.resolve()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     manifest = create_bundle(
-        asset_path(assets, "det.onnx", "PP-OCRv6_small_det.onnx"),
-        root / "models" / "ppocrv6-tiny" / "cls.onnx",
-        asset_path(assets, "rec.onnx", "PP-OCRv6_small_rec.onnx"),
-        asset_path(assets, "ppocr_keys.txt", "PP-OCRv6_small_rec_dict.txt"),
+        repository_path(root, args.detector),
+        repository_path(root, args.classifier),
+        repository_path(root, args.recognizer),
+        repository_path(root, args.dictionary),
         output / "model",
     )
     (output / "contract.json").write_text(

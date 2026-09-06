@@ -1,13 +1,13 @@
 # PP-OCRv6 Small analysis snapshot
 
 Status: **experimental fixed/dynamic validation only**. This report is not a
-production runtime or release-support claim. The Small ONNX files are not
-bundled in this repository.
+production runtime or release-support claim. The Small ONNX inputs are checked
+into `models/ppocrv6-small` for reproducible analysis, but they are not part of
+the default runtime or platform packages.
 
 The snapshot was produced with `converter/analyze_onnx.py` and compared with
-`tools/compare_model_analysis.py`. The local source assets were the PP-OCRv6
-Small DET/REC files used by the sibling OpenCV project; their identities are
-recorded here so a future model package can reproduce the probe:
+`tools/compare_model_analysis.py`. The authoritative paths and identities are
+recorded in `models/ppocrv6-models.json`:
 
 | Asset | Bytes | SHA-256 |
 |---|---:|---|
@@ -92,11 +92,11 @@ tensor axis unresolved. The existing runtime Reshape resolver fills that one
 axis from the concrete input element count; it rejects more than one unresolved
 axis or an inconsistent element count.
 
-Example invocation (the Small ONNX asset is external and is not committed):
+Example invocation using the checked-in Small ONNX asset:
 
 ```bash
 python tools/convert_small_rec_experimental.py \
-  --model PP-OCRv6_small_rec.onnx \
+  --model models/ppocrv6-small/rec.onnx \
   --dynamic \
   --output build/small-rec-dynamic.lwm \
   --report build/small-rec-dynamic.json
@@ -109,8 +109,8 @@ checked separately with:
 
 ```bash
 python tools/validate_small_dictionary_contract.py \
-  --rec-model path/to/PP-OCRv6_small_rec.onnx \
-  --dictionary path/to/PP-OCRv6_small_rec_dict.txt
+  --rec-model models/ppocrv6-small/rec.onnx \
+  --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt
 ```
 
 For a complete model directory containing `model.json`, the reusable contract
@@ -121,18 +121,18 @@ relationship:
 python tools/validate_model_contract.py models/ppocrv6-tiny
 ```
 
-The same command can be used with an external Small validation directory once
-its manifest is prepared; it does not make Small a bundled production model.
+The same command can be used with a staged Small validation directory once its
+manifest is prepared; it does not make Small a bundled production model.
 
-For the currently pinned external assets, the local validation directory can
-be staged without modifying the repository:
+The checked-in assets can be staged into a local validation directory without
+modifying their source files:
 
 ```bash
 python tools/stage_small_validation_bundle.py \
-  --det path/to/PP-OCRv6_small_det.onnx \
+  --det models/ppocrv6-small/det.onnx \
   --cls models/ppocrv6-tiny/cls.onnx \
-  --rec path/to/PP-OCRv6_small_rec.onnx \
-  --dictionary path/to/PP-OCRv6_small_rec_dict.txt \
+  --rec models/ppocrv6-small/rec.onnx \
+  --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
   --output-dir build-model-foundation/ppocrv6-small-validation
 python tools/validate_model_contract.py \
   build-model-foundation/ppocrv6-small-validation
@@ -246,19 +246,20 @@ image and returned 16 lines. The first lines were:
 每瓶22元，1000瓶起订)
 ```
 
-The reproducible experiment uses the external Small DET/REC models and their
-matching dictionary, plus the shared Tiny CLS model:
+The reproducible experiment uses the checked-in Small DET/REC models and their
+matching shared dictionary, plus the shared Tiny CLS model:
 
 ```bash
 python tools/convert_small_det_experimental.py \
-  --model PP-OCRv6_small_det.onnx --height 640 --width 640 --dynamic \
+  --model models/ppocrv6-small/det.onnx --height 640 --width 640 --dynamic \
   --output build/small-det-dynamic.lwm
 python tools/convert_small_rec_experimental.py \
-  --model PP-OCRv6_small_rec.onnx --dynamic \
+  --model models/ppocrv6-small/rec.onnx --dynamic \
   --output build/small-rec-dynamic.lwm
 build/Release/lw-ocr-ppm \
   build/small-det-dynamic.lwm build/models/cls.lwm \
-  build/small-rec-dynamic.lwm PP-OCRv6_small_rec_dict.txt \
+  build/small-rec-dynamic.lwm \
+  models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
   build/models/sample.ppm 320
 ```
 
@@ -267,7 +268,7 @@ dictionary/model contract, golden-corpus, and cross-platform release gates
 remain outstanding; the shared Tiny CLS identity is fixed.
 
 The experiment uses the shared Tiny CLS model for orientation classification,
-while DET/REC and the dictionary come from the external Small assets. This is
+while DET/REC and the dictionary come from the cataloged Small assets. This is
 a pipeline compatibility check, not an accuracy benchmark: punctuation
 differences versus Tiny are expected until a Small-specific golden corpus and
 thresholds are established.
@@ -400,33 +401,34 @@ image does not provide one of these fonts.
 
 The repository contains `PP-OCRv6 Small validation`:
 `.github/workflows/ppocrv6-small-validation.yml`. It runs on relevant pushes,
-weekly schedule, and manual dispatch. The pinned source and checksums live in
-`ci/ppocrv6-small-validation.json`; the model binaries are not copied into the
-source tree. The current local development files are the matching assets under
-`E:/My-Code/PPOCR/inference` (or an equivalent external directory).
+weekly schedule, and manual dispatch. `models/ppocrv6-models.json` is the single
+source of truth for model paths, shared assets, and SHA-256 values;
+`ci/ppocrv6-small-validation.json` records only the CI widths, line count, and
+full-text regression checksum. The resolver validates every catalog asset
+before the native build and pipeline run.
 
-Manual dispatch normally uses the contract without any input. For testing a
-different archive, the optional `assets_url_override`,
-`assets_sha256_override`, and `expected_full_text_sha256_override` inputs can
-replace individual contract values.
+Manual dispatch normally uses the checked-in contract without any input. The
+optional `expected_full_text_sha256_override` input is retained for deliberate
+candidate investigation; normal main-branch validation uses the pinned value.
 
-The archive may contain either the short names `det.onnx`, `rec.onnx`, and
-`ppocr_keys.txt`, or the upstream names
-`PP-OCRv6_small_det.onnx`, `PP-OCRv6_small_rec.onnx`, and
-`PP-OCRv6_small_rec_dict.txt`. The workflow rejects path traversal, verifies
-the archive checksum before extraction, and normalizes the three files into a
-temporary CI directory. The bundled Tiny `cls.onnx` is used deliberately: the
-Small profile has no separate classifier and the exact Tiny CLS identity is
-pinned by `converter/ppocr_contracts.py`.
+The Small profile has no separate classifier. It deliberately uses the
+cataloged Tiny `cls.onnx`, while Small and Medium share
+`ppocrv6-shared/PP-OCRv6_small_rec_dict.txt`.
 
-The same pipeline can be run locally without copying assets into the source
-tree:
+The same pipeline can be run locally from the repository root:
 
 ```bash
 python tools/run_small_validation.py \
-  --assets-dir path/to/small-assets \
+  --detector models/ppocrv6-small/det.onnx \
+  --classifier models/ppocrv6-tiny/cls.onnx \
+  --recognizer models/ppocrv6-small/rec.onnx \
+  --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
   --build-dir build \
-  --output-dir build-model-foundation/small-validation-run
+  --output-dir build-model-foundation/small-validation-run \
+  --rec-max-width 960 \
+  --expected-lines 16 \
+  --expected-full-text-sha256 \
+    9cd560aaff37f1013cf10ebd9c616f4e2446b800985a9d15aa408d4010cdba95
 ```
 
 It stages a manifest-checked analysis bundle, probes the REC dynamic metadata,
@@ -434,8 +436,5 @@ converts DET and REC prototypes, executes all three DET shapes and all five
 REC widths, applies the numerical gates, and runs the complete OCR sample. A
 successful run writes the report and intermediate outputs under the selected
 output directory. `summary.json` includes the newline-joined UTF-8 OCR text
-SHA-256; pass `--expected-full-text-sha256` to turn that value into a strict
-regression gate. The contract currently leaves this hash unset until both
-Windows and Linux have been repeated under the same model and input identity.
-This is a repeatable compatibility gate, not a production support or
-release-package claim.
+SHA-256, and CI requires it to match the pinned contract. This is a repeatable
+compatibility gate, not a production support or release-package claim.

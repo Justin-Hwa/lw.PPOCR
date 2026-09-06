@@ -138,6 +138,8 @@ static int run_pipeline(int argc, char** argv) {
         use_classifier > 1u || !read_file(argv[6], &source, &source_bytes))
         return 2;
     lw_ocr_options_init(&options);
+    if (options.recognizer.target_width != 960u)
+        goto cleanup;
 #if INTPTR_MAX > INT32_MAX
     if (options.worker_count == 0u || options.worker_count > 8u)
         goto cleanup;
@@ -281,18 +283,21 @@ static int run_golden(int argc, char** argv) {
     uint32_t height;
     uint32_t stride;
     uint32_t use_classifier;
+    uint32_t recognizer_max_width;
     uint32_t index;
     lw_error error;
     lw_status status;
     int return_code = 1;
-    if (argc != 11 || !parse_u32(argv[7], &width) || !parse_u32(argv[8], &height) ||
+    if (argc != 12 || !parse_u32(argv[7], &width) || !parse_u32(argv[8], &height) ||
         !parse_u32(argv[9], &stride) || !parse_u32(argv[10], &use_classifier) ||
-        use_classifier > 1u || !read_file(argv[6], &source, &source_bytes))
+        !parse_u32(argv[11], &recognizer_max_width) || use_classifier > 1u ||
+        !read_file(argv[6], &source, &source_bytes))
         return 2;
 
     lw_ocr_options_init(&options);
     options.use_direction_classification = use_classifier;
     options.detector.limit_side_length = 320u;
+    options.recognizer.target_width = recognizer_max_width;
     lw_error_init(&error);
     status = lw_ocr_create(argv[2], use_classifier != 0u ? argv[3] : NULL, argv[4], argv[5],
                            &options, &ocr, &error);

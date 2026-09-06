@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage external Small assets plus the shared Tiny CLS for local validation.
+"""Stage supplied Small assets plus the shared Tiny CLS for local validation.
 
 The output is an analysis-only bundle in a caller-selected directory. It is
 not a release packager and does not copy assets into the source tree unless

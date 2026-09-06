@@ -127,7 +127,21 @@ class SmallContractTests(unittest.TestCase):
         )
         self.assertEqual(contract["rec_max_width"], 960)
         self.assertEqual(contract["expected_lines"], 16)
-        self.assertEqual(len(contract["assets_sha256"]), 64)
+        self.assertEqual(
+            contract["detector_path"], "models/ppocrv6-small/det.onnx"
+        )
+        self.assertEqual(
+            contract["recognizer_path"], "models/ppocrv6-small/rec.onnx"
+        )
+        self.assertEqual(
+            contract["classifier_path"], "models/ppocrv6-tiny/cls.onnx"
+        )
+        self.assertEqual(
+            contract["dictionary_path"],
+            "models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt",
+        )
+        self.assertEqual(len(contract["expected_full_text_sha256"]), 64)
+        self.assertEqual(len(contract["model_catalog_sha256"]), 64)
 
 
 if __name__ == "__main__":

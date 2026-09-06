@@ -5,27 +5,21 @@ on:
     branches:
       - main
     paths:
+      - "CMakeLists.txt"
+      - "cmake/**"
       - "src/**"
       - "include/**"
       - "converter/**"
       - "tools/**"
       - "tests/**"
+      - "models/**"
+      - "requirements-converter.txt"
       - "ci/ppocrv6-small-validation.json"
       - ".github/workflows/ppocrv6-small-validation.yml"
   schedule:
     - cron: "0 3 * * 1"
   workflow_dispatch:
     inputs:
-      assets_url_override:
-        description: "Optional validation ZIP URL override"
-        required: false
-        default: ""
-        type: string
-      assets_sha256_override:
-        description: "Optional validation ZIP SHA-256 override"
-        required: false
-        default: ""
-        type: string
       expected_full_text_sha256_override:
         description: "Optional full OCR text SHA-256 override"
         required: false
@@ -57,30 +51,12 @@ jobs:
         id: contract
         shell: bash
         env:
-          ASSETS_URL_OVERRIDE: ${{ inputs.assets_url_override }}
-          ASSETS_SHA256_OVERRIDE: ${{ inputs.assets_sha256_override }}
           EXPECTED_TEXT_SHA256_OVERRIDE: ${{ inputs.expected_full_text_sha256_override }}
         run: >-
           python tools/resolve_small_validation_contract.py
           --contract ci/ppocrv6-small-validation.json
-          --assets-url-override "$ASSETS_URL_OVERRIDE"
-          --assets-sha256-override "$ASSETS_SHA256_OVERRIDE"
           --expected-full-text-sha256-override "$EXPECTED_TEXT_SHA256_OVERRIDE"
           --github-output "$GITHUB_OUTPUT"
-      - name: Download and verify Small validation archive
-        shell: bash
-        env:
-          ASSETS_URL: ${{ steps.contract.outputs.assets_url }}
-          ASSETS_SHA256: ${{ steps.contract.outputs.assets_sha256 }}
-        run: |
-          set -euo pipefail
-          mkdir -p .ci
-          curl -L --fail --retry 3 --retry-delay 2 \
-            "$ASSETS_URL" -o .ci/ppocrv6-small-validation.zip
-          python tools/extract_small_validation_assets.py \
-            --archive .ci/ppocrv6-small-validation.zip \
-            --sha256 "$ASSETS_SHA256" \
-            --output-dir .ci/small-assets
       - name: Configure Windows
         if: runner.os == 'Windows'
         shell: bash
@@ -93,14 +69,23 @@ jobs:
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
-      - name: Build runtime and standard tests
-        run: cmake --build build --config Release --parallel 2
+      - name: Build runtime and validation targets
+        run: >-
+          cmake --build build --config Release --parallel 2 --target
+          det-graph-driver rec-graph-driver lw-ocr-ppm test-dynamic-reshape
+          conv-reference-driver packed-conv1x1-benchmark-driver
+          conv3x3-stride2-benchmark-driver simd-backend-driver
       - name: Run standard contract tests
-        run: ctest --test-dir build -C Release --output-on-failure -R "model_analysis|dynamic_reshape_contract"
+        run: >-
+          ctest --test-dir build -C Release --output-on-failure
+          -R "model_analysis|dynamic_reshape_contract|conv_kernel_reference|packed_conv1x1_benchmark_smoke|conv3x3_stride2_benchmark_smoke|simd_backend_detection"
       - name: Run Small validation pipeline
         run: >-
           python tools/run_small_validation.py
-          --assets-dir .ci/small-assets
+          --detector "${{ steps.contract.outputs.detector_path }}"
+          --classifier "${{ steps.contract.outputs.classifier_path }}"
+          --recognizer "${{ steps.contract.outputs.recognizer_path }}"
+          --dictionary "${{ steps.contract.outputs.dictionary_path }}"
           --build-dir build
           --output-dir build/small-validation-run
           --rec-max-width "${{ steps.contract.outputs.rec_max_width }}"

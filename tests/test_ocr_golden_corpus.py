@@ -88,6 +88,7 @@ class OcrGoldenCorpusTest(unittest.TestCase):
         manifest = json.loads(self.corpus.read_text(encoding="utf-8"))
         self.assertEqual(manifest.get("schema_version"), 1)
         self.assertEqual(manifest.get("detector_limit_side_length"), 320)
+        self.assertEqual(manifest.get("recognizer_max_width"), 960)
         self.assertEqual(sha256(self.sample), manifest.get("source_sha256"))
         self.assertEqual(
             {
@@ -130,6 +131,7 @@ class OcrGoldenCorpusTest(unittest.TestCase):
                             str(height),
                             str(width * 3),
                             str(use_classifier),
+                            str(manifest["recognizer_max_width"]),
                         ],
                         check=False,
                         capture_output=True,
@@ -158,6 +160,9 @@ class OcrGoldenCorpusTest(unittest.TestCase):
 
                     parsed_lines = LINE_PATTERN.findall(completed.stdout)
                     self.assertEqual(len(parsed_lines), len(expected_text), completed.stdout)
+                    self.assertEqual(
+                        [values[7] for values in parsed_lines], expected_text
+                    )
                     profile = classification_profiles[case["classification_profile"]]
                     expected_labels = profile["labels"]
                     expected_rotations = profile["rotations"]
@@ -177,7 +182,6 @@ class OcrGoldenCorpusTest(unittest.TestCase):
                         classification_score = float(values[4])
                         rotation = int(values[5])
                         box = [float(value) for value in values[6].split(",")]
-                        self.assertEqual(values[7], expected_text[index])
                         self.assertGreaterEqual(detection_score, float(case["min_det_score"]))
                         self.assertGreaterEqual(recognition_score, float(case["min_rec_score"]))
                         self.assertLessEqual(detection_score, 1.0)
