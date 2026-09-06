@@ -67,6 +67,15 @@ class SmallValidationBundleTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate normalized"):
                 extract(archive, root / "assets", sha256(archive))
 
+    def test_validation_archive_rejects_windows_absolute_member(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "absolute.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("C:/outside/det.onnx", b"det")
+            with self.assertRaisesRegex(ValueError, "unsafe archive member"):
+                extract(archive, root / "assets", sha256(archive))
+
 
 if __name__ == "__main__":
     unittest.main()

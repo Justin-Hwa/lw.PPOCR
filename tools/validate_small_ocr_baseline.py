@@ -48,8 +48,19 @@ def main() -> int:
     parser.add_argument("--sample", type=Path, required=True)
     parser.add_argument("--box-tolerance", type=float, default=1.0e-3)
     parser.add_argument("--score-tolerance", type=float, default=1.0e-5)
+    parser.add_argument(
+        "--rec-max-width",
+        type=int,
+        choices=(192, 320, 480, 640, 960),
+        default=None,
+        help="adaptive REC width limit; defaults to the baseline value or 960",
+    )
     args = parser.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+    baseline_width = int(baseline.get("rec_max_width", 960))
+    rec_max_width = args.rec_max_width if args.rec_max_width is not None else baseline_width
+    if rec_max_width not in (192, 320, 480, 640, 960):
+        raise SystemExit(f"invalid baseline rec_max_width: {rec_max_width}")
     source = baseline.get("source_sha256")
     import hashlib
 
@@ -73,6 +84,7 @@ def main() -> int:
             str(args.recognizer),
             str(args.dictionary),
             str(args.sample),
+            str(rec_max_width),
         ],
         check=False,
         capture_output=True,
@@ -118,7 +130,7 @@ def main() -> int:
         for score_name in ("det_score", "rec_score", "cls_score"):
             if not math.isfinite(got[score_name]) or abs(got[score_name] - want[score_name]) > args.score_tolerance:
                 raise SystemExit(f"line {index} {score_name} changed beyond tolerance")
-    print(json.dumps({"status": "ok", "lines": len(actual)}, ensure_ascii=False))
+    print(json.dumps({"status": "ok", "lines": len(actual), "rec_max_width": rec_max_width}, ensure_ascii=False))
     return 0
 
 

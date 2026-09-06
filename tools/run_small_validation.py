@@ -7,12 +7,24 @@ import argparse
 import json
 import re
 import subprocess
+import hashlib
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.stage_small_validation_bundle import create_bundle
+
+
+LINE_RE = re.compile(r"^\d+ text=(?P<text>.*?) rec=")
+
+
+def recognized_text(stdout: str) -> list[str]:
+    return [match.group("text") for line in stdout.splitlines() if (match := LINE_RE.match(line))]
+
+
+def recognized_text_sha256(stdout: str) -> str:
+    return hashlib.sha256("\n".join(recognized_text(stdout)).encode("utf-8")).hexdigest()
 
 
 def run(label: str, command: list[str], cwd: Path) -> str:
@@ -54,6 +66,17 @@ def main() -> int:
     parser.add_argument("--assets-dir", type=Path, required=True)
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--rec-max-width",
+        type=int,
+        choices=(192, 320, 480, 640, 960),
+        default=960,
+        help="REC width limit used by the complete OCR gate",
+    )
+    parser.add_argument(
+        "--expected-full-text-sha256",
+        help="optional SHA-256 of newline-joined recognized text",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     assets = args.assets_dir.resolve()
@@ -125,14 +148,44 @@ def main() -> int:
     sample = build / "models" / "sample.ppm"
     stdout = run(
         "full OCR sample",
-        [str(ocr), str(det_lwm), str(build / "models" / "cls.lwm"), str(rec_lwm), str(output / "model/ppocr_keys.txt"), str(sample), "960"],
+        [
+            str(ocr),
+            str(det_lwm),
+            str(build / "models" / "cls.lwm"),
+            str(rec_lwm),
+            str(output / "model/ppocr_keys.txt"),
+            str(sample),
+            str(args.rec_max_width),
+        ],
         root,
     )
     match = re.search(r"(?m)^lines=(\d+)\s", stdout)
     if match is None or int(match.group(1)) != 16:
         raise RuntimeError(f"full OCR sample did not return 16 lines:\n{stdout}")
+    text_lines = recognized_text(stdout)
+    if len(text_lines) != 16:
+        raise RuntimeError(f"full OCR sample returned {len(text_lines)} parsed lines, expected 16")
+    text_sha256 = recognized_text_sha256(stdout)
+    if args.expected_full_text_sha256 and text_sha256.lower() != args.expected_full_text_sha256.lower():
+        raise RuntimeError(
+            "full OCR text SHA-256 mismatch: "
+            f"{text_sha256} != {args.expected_full_text_sha256}"
+        )
     (output / "full-ocr.txt").write_text(stdout, encoding="utf-8", newline="\n")
-    print(json.dumps({"status": "ok", "rec_widths": list(widths), "det_shapes": [[320, 320], [640, 640], [640, 960]], "full_ocr_lines": 16}, ensure_ascii=False))
+    summary = {
+        "status": "ok",
+        "rec_widths": list(widths),
+        "full_ocr_rec_max_width": args.rec_max_width,
+        "det_shapes": [[320, 320], [640, 640], [640, 960]],
+        "full_ocr_lines": 16,
+        "full_ocr_text_sha256": text_sha256,
+    }
+    (output / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    print(json.dumps(summary, ensure_ascii=False))
     return 0
 
 

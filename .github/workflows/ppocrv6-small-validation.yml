@@ -11,6 +11,11 @@ on:
         description: "SHA-256 of the validation ZIP"
         required: true
         type: string
+      expected_full_text_sha256:
+        description: "Optional SHA-256 of newline-joined sample OCR text"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -69,6 +74,7 @@ jobs:
           --assets-dir .ci/small-assets
           --build-dir build
           --output-dir build/small-validation-run
+          --expected-full-text-sha256 "${{ inputs.expected_full_text_sha256 }}"
       - name: Upload Small validation report
         uses: actions/upload-artifact@v7
         with:

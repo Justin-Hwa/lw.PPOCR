@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
 ROLE_NAMES = {
@@ -25,10 +25,17 @@ def sha256(path: Path) -> str:
 
 
 def safe_name(name: str) -> str:
-    path = Path(name.replace("\\", "/"))
-    if path.is_absolute() or ".." in path.parts:
+    normalized = name.replace("\\", "/")
+    posix_path = PurePosixPath(normalized)
+    windows_path = PureWindowsPath(normalized)
+    if (
+        posix_path.is_absolute()
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+        or ".." in posix_path.parts
+    ):
         raise ValueError(f"unsafe archive member: {name}")
-    return path.name
+    return posix_path.name
 
 
 def extract(archive: Path, output_dir: Path, expected_sha256: str) -> None:

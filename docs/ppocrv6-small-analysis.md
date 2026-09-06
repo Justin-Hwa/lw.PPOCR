@@ -311,7 +311,10 @@ corpus or release artifacts.
 the sample SHA-256, all four model/dictionary SHA-256 identities, 16-line text
 ordering, boxes, classification metadata, and score stability. The current
 dynamic DET/REC baseline replay completed successfully on the local Windows
-x64 build; its JSON remains an ignored build artifact.
+x64 build; its JSON remains an ignored build artifact. Both commands accept
+`--rec-max-width` (`192`, `320`, `480`, `640`, or `960`); the selected width is
+stored in the baseline and reused by validation, so adaptive-width results are
+not compared across different runtime limits by accident.
 
 ## Deterministic OCR scene set
 
@@ -344,6 +347,21 @@ The runner writes `scene-suite-results.json` beside the manifest and exits
 non-zero for a process failure, malformed quadrilateral, non-finite score, or
 empty detection result. It deliberately reports recognized text instead of
 requiring exact strings, so experimental model comparisons remain useful.
+
+For a strict regression baseline, save one successful report and compare a
+later run with:
+
+```bash
+python tools/validate_small_scene_baseline.py \
+  --baseline build-model-foundation/small-validation-run/scene-suite-baseline.json \
+  --actual build-model-foundation/small-validation-run/scene-suite-current.json
+```
+
+The comparison binds the scene manifest, REC width, and all four model asset
+hashes. It then checks scene order, detected-line counts, recognized text,
+rotation labels, quadrilateral coordinates, and scores within explicit
+tolerances. This is a regression baseline for the experimental Small pipeline;
+it is not an accuracy claim against a human-labeled corpus.
 
 The generated directory is a build artifact and is intentionally not part of
 the release package. On the local Windows x64 build, the dynamic Small
@@ -391,5 +409,8 @@ It stages a manifest-checked analysis bundle, probes the REC dynamic metadata,
 converts DET and REC prototypes, executes all three DET shapes and all five
 REC widths, applies the numerical gates, and runs the complete OCR sample. A
 successful run writes the report and intermediate outputs under the selected
-output directory. This is a repeatable compatibility gate, not a production
-support or release-package claim.
+output directory. `summary.json` includes the newline-joined UTF-8 OCR text
+SHA-256; pass `--expected-full-text-sha256` to turn that value into a strict
+regression gate. The workflow exposes the same value as an optional manual
+input. This is a repeatable compatibility gate, not a production support or
+release-package claim.

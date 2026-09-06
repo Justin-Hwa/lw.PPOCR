@@ -11,6 +11,8 @@ from converter.ppocr_contracts import (
     small_rec_metadata,
 )
 from tools.run_ocr_scene_suite import parse_output
+from tools.run_small_validation import recognized_text_sha256
+from tools.validate_small_scene_baseline import compare_reports
 from tools.validate_small_rec_dynamic_rule import validate_report
 
 
@@ -63,6 +65,50 @@ class SmallContractTests(unittest.TestCase):
         self.assertEqual(header["detector_width"], 960)
         self.assertEqual(header["detector_height"], 384)
         self.assertEqual(lines[0]["text"], "示例")
+
+    def test_full_ocr_text_checksum_is_newline_joined_utf8(self) -> None:
+        output = (
+            "lines=2 image=10x10 detector_input=10x10\n"
+            "0 text=第一行 rec=1 det=1 cls=0/1 rotate=0 [(0,0),(1,0),(1,1),(0,1)]\n"
+            "1 text=第二行 rec=1 det=1 cls=0/1 rotate=0 [(0,2),(1,2),(1,3),(0,3)]\n"
+        )
+        import hashlib
+
+        expected = hashlib.sha256("第一行\n第二行".encode("utf-8")).hexdigest()
+        self.assertEqual(recognized_text_sha256(output), expected)
+
+    def test_scene_baseline_catches_text_regression(self) -> None:
+        line = {
+            "index": 0,
+            "text": "示例",
+            "box": [1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 1.0, 4.0],
+            "rotation": 0,
+            "det_score": 0.9,
+            "rec_score": 0.8,
+            "cls_score": 1.0,
+        }
+        report = {
+            "schema_version": 1,
+            "manifest_sha256": "a" * 64,
+            "rec_max_width": 960,
+            "models": {"detector": {"sha256": "b" * 64}},
+            "scenes": [{
+                "name": "scene",
+                "status": "ok",
+                "width": 10,
+                "height": 10,
+                "expected_source_lines": 1,
+                "detected_lines": 1,
+                "recognized_text": ["示例"],
+                "rotations": [0],
+                "lines": [line],
+            }],
+        }
+        relocated = {**report, "models": {"detector": {"path": "/runner/work/build/det.lwm", "sha256": "b" * 64}}}
+        self.assertEqual(compare_reports(report, relocated)["status"], "ok")
+        changed = {**report, "scenes": [{**report["scenes"][0], "recognized_text": ["变更"]}]}
+        with self.assertRaisesRegex(ValueError, "recognized_text changed"):
+            compare_reports(report, changed)
 
 
 if __name__ == "__main__":

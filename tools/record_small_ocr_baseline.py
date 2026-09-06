@@ -32,6 +32,13 @@ def main() -> int:
     parser.add_argument("--dictionary", type=Path, required=True)
     parser.add_argument("--sample", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--rec-max-width",
+        type=int,
+        choices=(192, 320, 480, 640, 960),
+        default=960,
+        help="adaptive REC width limit passed to lw-ocr-ppm",
+    )
     args = parser.parse_args()
     command = [
         str(args.ocr),
@@ -40,6 +47,7 @@ def main() -> int:
         str(args.recognizer),
         str(args.dictionary),
         str(args.sample),
+        str(args.rec_max_width),
     ]
     if args.classifier is None:
         raise SystemExit("--classifier is required by the current lw-ocr-ppm CLI")
@@ -85,6 +93,7 @@ def main() -> int:
         "status": "analysis-only",
         "source": str(args.sample),
         "source_sha256": sha256(args.sample),
+        "rec_max_width": args.rec_max_width,
         "models": {
             "detector": {"path": str(args.detector), "sha256": sha256(args.detector)},
             "classifier": {"path": str(args.classifier), "sha256": sha256(args.classifier)},

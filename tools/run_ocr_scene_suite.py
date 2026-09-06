@@ -103,6 +103,12 @@ def main() -> int:
         "schema_version": 1,
         "manifest_sha256": sha256(args.manifest),
         "rec_max_width": args.rec_max_width,
+        "models": {
+            "detector": {"path": str(args.detector), "sha256": sha256(args.detector)},
+            "classifier": {"path": str(args.classifier), "sha256": sha256(args.classifier)},
+            "recognizer": {"path": str(args.recognizer), "sha256": sha256(args.recognizer)},
+            "dictionary": {"path": str(args.dictionary), "sha256": sha256(args.dictionary)},
+        },
         "scenes": [],
     }
     failures: list[str] = []
@@ -153,6 +159,7 @@ def main() -> int:
                         "detected_lines": len(lines),
                         "recognized_text": [line["text"] for line in lines],
                         "rotations": [line["rotation"] for line in lines],
+                        "lines": lines,
                         "min_det_score": min(line["det_score"] for line in lines),
                         "min_rec_score": min(line["rec_score"] for line in lines),
                     }
