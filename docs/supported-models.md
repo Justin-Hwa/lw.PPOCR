@@ -10,18 +10,30 @@
 
 | Family | Variant | ONNX analysis | Experimental LWM | Full OCR | Release |
 |---|---|---|---|---|---|
-| PP-OCRv6 | Small | ✅ | ✅ fixed + dynamic prototypes | ✅ experimental | ❌ |
-| PP-OCRv6 | Medium | external model directory supported | ❌ | ❌ | ❌ |
+| PP-OCRv6 | Small | ✅ | ✅ fixed + dynamic prototypes | ✅ experimental | model archive only |
+| PP-OCRv6 | Medium | ✅ | ✅ fixed-shape DET + fixed-width REC analysis prototypes | ❌ | model archive only |
 
 Experimental means that ONNX checker, shape inference, operator inventory,
 fixed-width and narrow dynamic LWM conversion, graph-output comparison, and
 (for Small) a dependency-free full-OCR pipeline have been validated when the
-external model assets are supplied. It is not a production support claim and
-does not add the variant to the default model package, C ABI, Android, WASM,
-or release assets.
+external model assets are supplied. Medium currently has analysis-only
+fixed-shape/fixed-width and narrow dynamic conversion checkpoints, plus one
+complete sample-image composition check; it has no production package. This is not a
+production support claim and does not add either variant to the default model
+package, C ABI, Android, WASM, or the default runtime release. The dedicated
+model archive contains the checked ONNX inputs for reproducible analysis only.
+
+The authoritative asset layout and sharing rules are in
+[`models/ppocrv6-models.json`](../models/ppocrv6-models.json). Small and
+Medium use the same `PP-OCRv6_small_rec_dict.txt`, and all three variants use
+the same Tiny CLS asset. The release archive is named
+`lw.PPOCR.C-<version>-ppocrv6-models.zip` and has a matching `.sha256` file.
 
 See the [PP-OCRv6 Small analysis snapshot](ppocrv6-small-analysis.md) for the
 current graph-size and operator Go/No-Go findings.
+The generated [PP-OCRv6 Medium analysis report](ppocrv6-medium-analysis.md)
+records its DET/REC graph, current operator surface, and fixed-width REC
+conversion checkpoint.
 
 The exact Tiny REC, fixed-batch CLS, and DET models are exposed through the
 production public C APIs. Small REC and DET are currently exposed only through
@@ -30,11 +42,11 @@ uses the exact shared Tiny CLS asset. Its SHA-256 is part of the Small
 validation contract. Encoded
 image-file decoding stays outside the core API.
 
-### External Small validation assets
+### Small and Medium model assets
 
-These hashes identify the external PP-OCRv6 Small assets used by the current
-experiments. They are recorded for reproducibility only; the files are not
-bundled or redistributed by this repository.
+These hashes identify the checked model assets. Small and Medium are still
+analysis-only, but the ONNX files are included in the source tree and in the
+dedicated model archive.
 
 | Asset | Role | SHA-256 |
 |---|---|---|
@@ -42,6 +54,8 @@ bundled or redistributed by this repository.
 | PP-OCRv6 Small REC | recognizer | `5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634` |
 | PP-OCRv6 Small REC dictionary | CTC dictionary | `118d0f0714ad2a37668c23d6541f2c3feb65b8214041265b567f7fd5b3365d8e` |
 | PP-OCRv6 Tiny CLS (shared) | direction classifier | `dd8b2b61983d76ab230a58da9e0e0e84956b71c3877f2ce6e438fe22d74d2cf2` |
+| PP-OCRv6 Medium DET | detector | `eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1` |
+| PP-OCRv6 Medium REC | recognizer | `9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba` |
 
 The Small dictionary contains 18,708 entries and the REC graph exposes 18,710
 classes, matching the current decoder convention (blank plus trailing space).

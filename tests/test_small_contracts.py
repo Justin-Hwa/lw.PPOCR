@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from converter.ppocr_contracts import (
     PP_OCRV6_REC_WIDTHS,
@@ -12,6 +13,11 @@ from converter.ppocr_contracts import (
 )
 from tools.run_ocr_scene_suite import parse_output
 from tools.run_small_validation import recognized_text_sha256
+from tools.compare_rec_accuracy import edit_distance, normalize
+from tools.resolve_small_validation_contract import resolve_contract
+
+
+ROOT = Path(__file__).resolve().parents[1]
 from tools.validate_small_scene_baseline import compare_reports
 from tools.validate_small_rec_dynamic_rule import validate_report
 
@@ -109,6 +115,19 @@ class SmallContractTests(unittest.TestCase):
         changed = {**report, "scenes": [{**report["scenes"][0], "recognized_text": ["变更"]}]}
         with self.assertRaisesRegex(ValueError, "recognized_text changed"):
             compare_reports(report, changed)
+
+    def test_rec_accuracy_metrics_use_unicode_codepoints(self) -> None:
+        self.assertEqual(normalize("甲\r\n乙"), "甲\n乙")
+        self.assertEqual(edit_distance("甲乙", "甲丙乙"), 1)
+        self.assertEqual(edit_distance("甲乙", "甲"), 1)
+
+    def test_pinned_small_validation_contract_is_resolvable(self) -> None:
+        contract = resolve_contract(
+            ROOT / "ci" / "ppocrv6-small-validation.json"
+        )
+        self.assertEqual(contract["rec_max_width"], 960)
+        self.assertEqual(contract["expected_lines"], 16)
+        self.assertEqual(len(contract["assets_sha256"]), 64)
 
 
 if __name__ == "__main__":

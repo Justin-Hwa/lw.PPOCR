@@ -1,4 +1,4 @@
-"""Compare fixed-width Small REC LWM outputs with ONNX Runtime."""
+"""Compare fixed-width REC LWM outputs with ONNX Runtime."""
 
 from __future__ import annotations
 
@@ -57,6 +57,16 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--output-prefix",
+        default="small-lwm-w",
+        help="prefix for per-width .f32 files (default: small-lwm-w)",
+    )
+    parser.add_argument(
+        "--label",
+        default="Small REC",
+        help="label used when reporting a failed numerical gate",
+    )
     parser.add_argument("--width", type=int, action="append", dest="widths")
     parser.add_argument("--error-threshold", type=nonnegative_float, default=1.0e-4)
     parser.add_argument("--max-abs-error", type=nonnegative_float)
@@ -75,7 +85,7 @@ def main() -> int:
         onnx_output = session.run(
             None, {session.get_inputs()[0].name: input_values.reshape(1, 3, 48, width)}
         )[0].reshape(-1)
-        lwm_path = args.output_dir / f"small-lwm-w{width}.f32"
+        lwm_path = args.output_dir / f"{args.output_prefix}{width}.f32"
         lwm_output = np.fromfile(lwm_path, dtype=np.float32)
         if lwm_output.size != onnx_output.size:
             raise SystemExit(
@@ -97,7 +107,7 @@ def main() -> int:
     print(json.dumps(results, ensure_ascii=False, indent=2))
     failures = check_gate(results, args)
     if failures:
-        print("Small REC numerical gate failed:", file=sys.stderr)
+        print(f"{args.label} numerical gate failed:", file=sys.stderr)
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1

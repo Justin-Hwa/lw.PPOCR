@@ -161,6 +161,13 @@ Windows 上使用 MSVC + Ninja 时，请先打开“x64 Native Tools Command Pro
 使用 Ninja 时，程序通常位于 `build/bin/` 或 CMake 输出中显示的位置，不需要
 `Release` 这一层目录。
 
+已整理的 PP-OCRv6 模型输入由
+[`models/ppocrv6-models.json`](models/ppocrv6-models.json) 统一登记，包含
+Tiny、Small、Medium 的 DET/REC，并由三个变体共用一个 Tiny CLS，Small 和
+Medium 共用 `PP-OCRv6_small_rec_dict.txt`。Small、Medium 仍属于分析阶段；
+发布时会提供独立模型压缩包，用于可复现的转换和 profiling，不会改变默认
+运行时模型包。
+
 ### HTTP OCR 与 Web 页面
 
 HTTP Demo 使用原生 C++ 和 vendored `cpp-httplib`，没有 .NET 运行时依赖：

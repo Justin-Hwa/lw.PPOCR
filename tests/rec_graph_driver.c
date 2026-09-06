@@ -121,7 +121,8 @@ int main(int argc, char** argv) {
     if (!write_output(argv[3], output, (size_t)output_count)) {
         goto cleanup;
     }
-    printf("shape=1,%d,6906 elements=%llu\n", output_desc.dimensions[1],
+    printf("shape=1,%d,%d elements=%llu\n", output_desc.dimensions[1],
+           output_desc.dimensions[2],
            (unsigned long long)output_count);
     exit_code = 0;
 

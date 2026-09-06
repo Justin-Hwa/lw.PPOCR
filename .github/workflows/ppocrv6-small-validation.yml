@@ -1,18 +1,33 @@
 name: ppocrv6-small-validation
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "include/**"
+      - "converter/**"
+      - "tools/**"
+      - "tests/**"
+      - "ci/ppocrv6-small-validation.json"
+      - ".github/workflows/ppocrv6-small-validation.yml"
+  schedule:
+    - cron: "0 3 * * 1"
   workflow_dispatch:
     inputs:
-      assets_url:
-        description: "Pinned ZIP URL containing PP-OCRv6 Small DET/REC/dictionary"
-        required: true
+      assets_url_override:
+        description: "Optional validation ZIP URL override"
+        required: false
+        default: ""
         type: string
-      assets_sha256:
-        description: "SHA-256 of the validation ZIP"
-        required: true
+      assets_sha256_override:
+        description: "Optional validation ZIP SHA-256 override"
+        required: false
+        default: ""
         type: string
-      expected_full_text_sha256:
-        description: "Optional SHA-256 of newline-joined sample OCR text"
+      expected_full_text_sha256_override:
+        description: "Optional full OCR text SHA-256 override"
         required: false
         default: ""
         type: string
@@ -38,11 +53,25 @@ jobs:
           cache-dependency-path: requirements-converter.txt
       - name: Install converter dependencies
         run: python -m pip install -r requirements-converter.txt
+      - name: Resolve Small validation contract
+        id: contract
+        shell: bash
+        env:
+          ASSETS_URL_OVERRIDE: ${{ inputs.assets_url_override }}
+          ASSETS_SHA256_OVERRIDE: ${{ inputs.assets_sha256_override }}
+          EXPECTED_TEXT_SHA256_OVERRIDE: ${{ inputs.expected_full_text_sha256_override }}
+        run: >-
+          python tools/resolve_small_validation_contract.py
+          --contract ci/ppocrv6-small-validation.json
+          --assets-url-override "$ASSETS_URL_OVERRIDE"
+          --assets-sha256-override "$ASSETS_SHA256_OVERRIDE"
+          --expected-full-text-sha256-override "$EXPECTED_TEXT_SHA256_OVERRIDE"
+          --github-output "$GITHUB_OUTPUT"
       - name: Download and verify Small validation archive
         shell: bash
         env:
-          ASSETS_URL: ${{ inputs.assets_url }}
-          ASSETS_SHA256: ${{ inputs.assets_sha256 }}
+          ASSETS_URL: ${{ steps.contract.outputs.assets_url }}
+          ASSETS_SHA256: ${{ steps.contract.outputs.assets_sha256 }}
         run: |
           set -euo pipefail
           mkdir -p .ci
@@ -74,7 +103,9 @@ jobs:
           --assets-dir .ci/small-assets
           --build-dir build
           --output-dir build/small-validation-run
-          --expected-full-text-sha256 "${{ inputs.expected_full_text_sha256 }}"
+          --rec-max-width "${{ steps.contract.outputs.rec_max_width }}"
+          --expected-lines "${{ steps.contract.outputs.expected_lines }}"
+          --expected-full-text-sha256 "${{ steps.contract.outputs.expected_full_text_sha256 }}"
       - name: Upload Small validation report
         uses: actions/upload-artifact@v7
         with:

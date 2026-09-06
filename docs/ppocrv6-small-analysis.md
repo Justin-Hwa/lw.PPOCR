@@ -316,6 +316,29 @@ x64 build; its JSON remains an ignored build artifact. Both commands accept
 stored in the baseline and reused by validation, so adaptive-width results are
 not compared across different runtime limits by accident.
 
+## Tiny versus Small REC accuracy snapshot
+
+`tools/compare_rec_accuracy.py` evaluates both recognizers on the same ten
+versioned crops in `tests/fixtures/rec-golden-corpus.json`. It uses the corpus
+text as reference, computes Unicode-codepoint Levenshtein distance, and reports
+CER as total edits divided by total reference characters. Exact Line Rate is
+the fraction of crops whose complete decoded line matches exactly.
+
+The current local Windows x64 run used REC width 320 and 132 reference
+characters:
+
+| Model | Edit distance | CER | Exact Line Rate |
+|---|---:|---:|---:|
+| Tiny | 0 | 0.00% | 10/10 (100%) |
+| Small | 3 | 2.27% | 7/10 (70%) |
+
+This is a REC-only comparison, not an end-to-end DET+REC accuracy claim. The
+three Small differences are single-character substitutions/deletions in the
+price-per-kilogram, product-name, and net-content crops. A full-OCR CER needs
+an annotated corpus whose expected text lines are explicitly aligned with
+detection regions; the current scene suite intentionally does not make that
+assumption.
+
 ## Deterministic OCR scene set
 
 For local experiments, `tools/generate_ocr_test_scenes.py` creates six
@@ -375,16 +398,17 @@ image does not provide one of these fonts.
 
 ## Reproducible CI validation
 
-The repository contains a manual workflow named `PP-OCRv6 Small validation`:
-`.github/workflows/ppocrv6-small-validation.yml`. It is intentionally not part
-of the normal release workflow because Small is still analysis-only and its
-model archive is not redistributed by this repository.
+The repository contains `PP-OCRv6 Small validation`:
+`.github/workflows/ppocrv6-small-validation.yml`. It runs on relevant pushes,
+weekly schedule, and manual dispatch. The pinned source and checksums live in
+`ci/ppocrv6-small-validation.json`; the model binaries are not copied into the
+source tree. The current local development files are the matching assets under
+`E:/My-Code/PPOCR/inference` (or an equivalent external directory).
 
-The workflow accepts two inputs:
-
-* `assets_url`: a pinned ZIP URL containing the external Small DET, REC, and
-  dictionary files;
-* `assets_sha256`: the SHA-256 of that exact ZIP file.
+Manual dispatch normally uses the contract without any input. For testing a
+different archive, the optional `assets_url_override`,
+`assets_sha256_override`, and `expected_full_text_sha256_override` inputs can
+replace individual contract values.
 
 The archive may contain either the short names `det.onnx`, `rec.onnx`, and
 `ppocr_keys.txt`, or the upstream names
@@ -411,6 +435,7 @@ REC widths, applies the numerical gates, and runs the complete OCR sample. A
 successful run writes the report and intermediate outputs under the selected
 output directory. `summary.json` includes the newline-joined UTF-8 OCR text
 SHA-256; pass `--expected-full-text-sha256` to turn that value into a strict
-regression gate. The workflow exposes the same value as an optional manual
-input. This is a repeatable compatibility gate, not a production support or
+regression gate. The contract currently leaves this hash unset until both
+Windows and Linux have been repeated under the same model and input identity.
+This is a repeatable compatibility gate, not a production support or
 release-package claim.

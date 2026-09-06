@@ -106,7 +106,11 @@ def lower_dynamic_metadata(model: onnx.ModelProto) -> onnx.ModelProto:
     return converted
 
 
-def dynamic_shape_inference(model: onnx.ModelProto, widths: tuple[int, int] = (320, 640)) -> onnx.ModelProto:
+def dynamic_shape_inference(
+    model: onnx.ModelProto,
+    widths: tuple[int, int] = (320, 640),
+    width_symbol: str = "LW_SMALL_REC_WIDTH",
+) -> onnx.ModelProto:
     """Attach observed shapes while marking only width-varying axes dynamic."""
     inferred = copy.deepcopy(model)
     output_names = list(dict.fromkeys(
@@ -152,14 +156,14 @@ def dynamic_shape_inference(model: onnx.ModelProto, widths: tuple[int, int] = (3
         for axis, dimension in enumerate(shapes[0]):
             dimension_info = value.type.tensor_type.shape.dim.add()
             if any(shape[axis] != dimension for shape in shapes[1:]):
-                dimension_info.dim_param = "LW_SMALL_REC_WIDTH"
+                dimension_info.dim_param = width_symbol
             else:
                 dimension_info.dim_value = int(dimension)
     input_shape = inferred.graph.input[0].type.tensor_type.shape
     input_shape.dim[0].ClearField("dim_param")
     input_shape.dim[0].dim_value = 1
     input_shape.dim[3].ClearField("dim_value")
-    input_shape.dim[3].dim_param = "LW_SMALL_REC_WIDTH"
+    input_shape.dim[3].dim_param = width_symbol
     return inferred
 
 

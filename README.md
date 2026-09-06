@@ -119,6 +119,13 @@ public-API Demos, the machine-readable
 With a single-configuration generator such as Ninja, omit the `Release`
 subdirectory.
 
+The checked PP-OCRv6 model inputs are catalogued in
+[`models/ppocrv6-models.json`](models/ppocrv6-models.json). It includes Tiny,
+Small, and Medium DET/REC assets, with one shared Tiny CLS and one shared
+Small/Medium REC dictionary. Small and Medium remain analysis-only; the
+release model archive is intended for reproducible conversion and profiling,
+not the default runtime package.
+
 ## Standalone browser OCR
 
 Full PP-OCR can run entirely in the browser without a server. After activating

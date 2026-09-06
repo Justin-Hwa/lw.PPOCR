@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "variant": "ppocrv6-small",
+  "asset_version": "lw.OpenCVDNN.PPOCR-v1.2.1.0",
+  "source": "https://github.com/lxw112190/lw.OpenCVDNN.PPOCR/releases/tag/v1.2.1.0",
+  "url": "https://github.com/lxw112190/lw.OpenCVDNN.PPOCR/releases/download/v1.2.1.0/lw.OpenCVDNN.PPOCR-v1.2.1.0-win7-x64.zip",
+  "archive_sha256": "e8fedf5dffd64e7ecbd13aad32e5bc6606cd530dbbcdb167efb14cea9b0df5d2",
+  "assets": {
+    "det": {
+      "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"
+    },
+    "rec": {
+      "sha256": "5435fd747c9e0efe15a96d0b378d5bd157e9492ed8fd80edf08f30d02fa24634"
+    },
+    "dictionary": {
+      "sha256": "118d0f0714ad2a37668c23d6541f2c3feb65b8214041265b567f7fd5b3365d8e"
+    },
+    "cls": {
+      "shared_variant": "tiny",
+      "sha256": "dd8b2b61983d76ab230a58da9e0e0e84956b71c3877f2ce6e438fe22d74d2cf2"
+    }
+  },
+  "rec_widths": [192, 320, 480, 640, 960],
+  "full_ocr": {
+    "rec_max_width": 960,
+    "expected_lines": 16,
+    "expected_text_sha256": null
+  }
+}

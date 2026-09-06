@@ -850,6 +850,7 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
                 tests.test_analyze_onnx tests.test_compare_model_analysis
                 tests.test_cls_identity tests.test_model_contract
                 tests.test_small_validation_bundle
+                tests.test_model_catalog
                 tests.test_model_manifest
                 tests.test_probe_rec_shape_metadata
                 tests.test_small_contracts
@@ -1236,6 +1237,7 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
     add_dependencies(ocr-pipeline-driver convert_det_model convert_cls_model
         convert_rec_model)
     if(MSVC)
+        target_compile_definitions(ocr-pipeline-driver PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(ocr-pipeline-driver PRIVATE /W4 /WX /utf-8)
     else()
         target_compile_options(ocr-pipeline-driver PRIVATE
@@ -1385,6 +1387,7 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
     target_compile_features(rec-pipeline-driver PRIVATE c_std_11)
     add_dependencies(rec-pipeline-driver convert_rec_model)
     if(MSVC)
+        target_compile_definitions(rec-pipeline-driver PRIVATE _CRT_SECURE_NO_WARNINGS)
         target_compile_options(rec-pipeline-driver PRIVATE /W4 /WX /utf-8)
     else()
         target_compile_options(rec-pipeline-driver PRIVATE

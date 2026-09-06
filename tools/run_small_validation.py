@@ -77,6 +77,12 @@ def main() -> int:
         "--expected-full-text-sha256",
         help="optional SHA-256 of newline-joined recognized text",
     )
+    parser.add_argument(
+        "--expected-lines",
+        type=int,
+        default=16,
+        help="expected number of lines in the complete OCR sample",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     assets = args.assets_dir.resolve()
@@ -160,11 +166,16 @@ def main() -> int:
         root,
     )
     match = re.search(r"(?m)^lines=(\d+)\s", stdout)
-    if match is None or int(match.group(1)) != 16:
-        raise RuntimeError(f"full OCR sample did not return 16 lines:\n{stdout}")
+    if match is None or int(match.group(1)) != args.expected_lines:
+        raise RuntimeError(
+            f"full OCR sample did not return {args.expected_lines} lines:\n{stdout}"
+        )
     text_lines = recognized_text(stdout)
-    if len(text_lines) != 16:
-        raise RuntimeError(f"full OCR sample returned {len(text_lines)} parsed lines, expected 16")
+    if len(text_lines) != args.expected_lines:
+        raise RuntimeError(
+            f"full OCR sample returned {len(text_lines)} parsed lines, "
+            f"expected {args.expected_lines}"
+        )
     text_sha256 = recognized_text_sha256(stdout)
     if args.expected_full_text_sha256 and text_sha256.lower() != args.expected_full_text_sha256.lower():
         raise RuntimeError(
@@ -177,7 +188,7 @@ def main() -> int:
         "rec_widths": list(widths),
         "full_ocr_rec_max_width": args.rec_max_width,
         "det_shapes": [[320, 320], [640, 640], [640, 960]],
-        "full_ocr_lines": 16,
+        "full_ocr_lines": args.expected_lines,
         "full_ocr_text_sha256": text_sha256,
     }
     (output / "summary.json").write_text(
