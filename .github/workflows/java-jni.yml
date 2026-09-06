@@ -135,6 +135,8 @@ jobs:
             "native\lw_ppocr_java.dll",
             "native\lw_ppocr_c.dll",
             "java\NativeOcr.java",
+            "java\OcrLine.java",
+            "java\OcrResult.java",
             "java\OcrDemo.java",
             "models\det.lwm",
             "models\cls.lwm",
@@ -197,7 +199,8 @@ jobs:
             java_dir="$GITHUB_WORKSPACE/dist/lw-ppocr-java-jni-linux-x64/java"
           fi
           javac -encoding UTF-8 -d build-java-bundle-classes \
-            "$java_dir/NativeOcr.java" "$java_dir/OcrDemo.java"
+            "$java_dir/NativeOcr.java" "$java_dir/OcrLine.java" \
+            "$java_dir/OcrResult.java" "$java_dir/OcrDemo.java"
 
       - name: Run Java OCR smoke on Windows
         if: runner.os == 'Windows'

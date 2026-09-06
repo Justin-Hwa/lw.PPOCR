@@ -212,8 +212,10 @@ The development package also includes a deliberately small Java 8+ console
 consumer under `examples/java-jni/`. It supports Windows x64 and Linux x64,
 uses standard `ImageIO` for JPEG/PNG/BMP input, and calls the existing C ABI
 through `lw_ppocr_java` without adding Java dependencies to the core build.
-It returns ordered text lines only; there is no UI, Android support, Maven
-artifact, automatic native loader, or model download. See the bilingual
+It keeps a compatibility text-only API and also exposes immutable detailed
+`OcrResult`/`OcrLine` values with source-image quadrilaterals and detection /
+recognition scores. There is no UI, Android support, Maven artifact, automatic
+native loader, or model download. See the bilingual
 [`examples/java-jni/README.md`](examples/java-jni/README.md) and
 [`examples/java-jni/README.zh-CN.md`](examples/java-jni/README.zh-CN.md).
 The same workflow publishes SHA-256-checked Windows/Linux Java JNI bundles for

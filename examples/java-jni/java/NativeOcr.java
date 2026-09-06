@@ -5,6 +5,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.imageio.ImageIO;
 
@@ -12,9 +14,9 @@ import javax.imageio.ImageIO;
  * Minimal desktop Java/JVM wrapper over the lw.PPOCR.C C ABI.
  *
  * <p>This example deliberately keeps the public surface small: one engine is
- * used serially, recognition returns only the ordered text lines, and the JNI
- * library is loaded from {@code java.library.path}. It is not an Android or
- * Maven SDK.</p>
+ * used serially, the legacy text-only API remains available alongside an
+ * immutable detailed result API, and the JNI library is loaded from
+ * {@code java.library.path}. It is not an Android or Maven SDK.</p>
  */
 public final class NativeOcr implements AutoCloseable {
     public static final int READING_ORDER_HORIZONTAL_LTR = 0;
@@ -88,6 +90,33 @@ public final class NativeOcr implements AutoCloseable {
         return nativeRecognize(handle, pixels, width, height, width * 3);
     }
 
+    /** Recognizes an image and returns text, source-image quadrilaterals and scores. */
+    public synchronized OcrResult recognizeFileDetailed(String imagePath) throws IOException {
+        if (imagePath == null) throw new NullPointerException("imagePath");
+        BufferedImage source = ImageIO.read(new File(imagePath));
+        if (source == null) throw new IOException("Unsupported or invalid image: " + imagePath);
+        return recognizeDetailed(source);
+    }
+
+    /** Recognizes an image and returns detailed immutable OCR data. */
+    public synchronized OcrResult recognizeDetailed(BufferedImage source) {
+        ensureOpen();
+        if (source == null) throw new NullPointerException("image");
+        BufferedImage image = toBgr(source);
+        int width = image.getWidth();
+        int height = image.getHeight();
+        byte[] pixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
+        NativeResult packet = nativeRecognizeDetailed(handle, pixels, width, height, width * 3);
+        List<OcrLine> lines = new ArrayList<OcrLine>(packet.texts.length);
+        for (int index = 0; index < packet.texts.length; ++index) {
+            float[] box = new float[8];
+            System.arraycopy(packet.boxes, index * 8, box, 0, 8);
+            lines.add(new OcrLine(index, packet.texts[index], box,
+                    packet.detectorScores[index], packet.recognitionScores[index]));
+        }
+        return new OcrResult(packet.width, packet.height, lines);
+    }
+
     public synchronized void setReadingOrder(int readingOrder) {
         ensureOpen();
         if (readingOrder < READING_ORDER_HORIZONTAL_LTR ||
@@ -158,6 +187,28 @@ public final class NativeOcr implements AutoCloseable {
             int width,
             int height,
             int stride);
+
+    private static native NativeResult nativeRecognizeDetailed(
+            long handle, byte[] bgr, int width, int height, int stride);
+
+    /** Flat JNI transport; deliberately not part of the public result API. */
+    private static final class NativeResult {
+        final int width;
+        final int height;
+        final String[] texts;
+        final float[] boxes;
+        final float[] detectorScores;
+        final float[] recognitionScores;
+        NativeResult(int width, int height, String[] texts, float[] boxes,
+                     float[] detectorScores, float[] recognitionScores) {
+            this.width = width;
+            this.height = height;
+            this.texts = texts;
+            this.boxes = boxes;
+            this.detectorScores = detectorScores;
+            this.recognitionScores = recognitionScores;
+        }
+    }
 
     private static native void nativeSetReadingOrder(long handle, int readingOrder);
 

@@ -228,8 +228,9 @@ Java `demo-java` 的 Debug/Release 变体但不上传。CI 通过不代表
 开发包现在还包含一个克制的 Java 8+ 控制台消费者示例，位于
 `examples/java-jni/`，目前在 Windows x64 和 Linux x64 上由 CI 验证。它使用
 标准库 `ImageIO` 读取 JPEG/PNG/BMP，通过 `lw_ppocr_java` 调用现有 C ABI，
-只返回按阅读顺序排列的文字行。该示例不包含 UI、Android、Maven 构件、native
-自动加载或模型下载。详见
+保留只返回按阅读顺序排列文字的兼容 API，同时提供包含原图四点坐标、检测分数和
+识别分数的不可变 `OcrResult`/`OcrLine` 详细结果 API。该示例不包含 UI、Android、
+Maven 构件、native 自动加载或模型下载。详见
 [`examples/java-jni/README.zh-CN.md`](examples/java-jni/README.zh-CN.md)。
 同一个 workflow 还会发布带 SHA-256 校验的 Windows/Linux Java JNI bundle，
 用于 CI 验证后的集成测试；正式 tagged release 会把同一份已验证内容重新打包为带版本号的 ZIP/TAR.GZ 资产。

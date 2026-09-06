@@ -15,7 +15,7 @@ from typing import NoReturn
 
 PLATFORMS = {"windows-x64", "linux-x64"}
 MODEL_FILES = ("det.lwm", "cls.lwm", "rec.lwm", "ppocr_keys.txt", "sample.jpg")
-JAVA_FILES = ("NativeOcr.java", "OcrDemo.java")
+JAVA_FILES = ("NativeOcr.java", "OcrLine.java", "OcrResult.java", "OcrDemo.java")
 
 
 def fail(message: str) -> NoReturn:

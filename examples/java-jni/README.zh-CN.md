@@ -21,6 +21,8 @@ cmake --build build-java-jni
 
 javac -encoding UTF-8 -d build-java-classes \
   examples/java-jni/java/NativeOcr.java \
+  examples/java-jni/java/OcrLine.java \
+  examples/java-jni/java/OcrResult.java \
   examples/java-jni/java/OcrDemo.java
 
 java -Djava.library.path=build-java-jni \
@@ -56,7 +58,7 @@ native 依赖闭包、Java 源码、模型、许可证、构建信息以及
 解压后在 bundle 根目录编译并运行示例：
 
 ```powershell
-javac -encoding UTF-8 -d classes java\NativeOcr.java java\OcrDemo.java
+javac -encoding UTF-8 -d classes java\NativeOcr.java java\OcrLine.java java\OcrResult.java java\OcrDemo.java
 $env:Path = "$(Resolve-Path .\native);$env:Path"
 java "-Djava.library.path=$(Resolve-Path .\native)" -cp classes OcrDemo `
   "$(Resolve-Path .\models)" "$(Resolve-Path .\models\sample.jpg)"
@@ -65,7 +67,7 @@ java "-Djava.library.path=$(Resolve-Path .\native)" -cp classes OcrDemo `
 Linux 下：
 
 ```bash
-javac -encoding UTF-8 -d classes java/NativeOcr.java java/OcrDemo.java
+javac -encoding UTF-8 -d classes java/NativeOcr.java java/OcrLine.java java/OcrResult.java java/OcrDemo.java
 java -Djava.library.path="$PWD/native" -cp classes OcrDemo \
   "$PWD/models" "$PWD/models/sample.jpg"
 ```
@@ -80,12 +82,28 @@ try (NativeOcr ocr = new NativeOcr("models", false, 0)) {
 ```
 
 `workerCount = 0` 使用 Runtime 默认值。`recognizeFile` 只返回按阅读顺序排列
-的文字，坐标和置信度留给后续完整绑定。一个 `NativeOcr` 实例内部串行化调用；
-`close()` 可重复调用，关闭后识别会抛出 `IllegalStateException`。
+的文字，并继续作为兼容 API 保留。需要坐标和置信度时使用详细结果 API：
+
+```java
+try (NativeOcr ocr = new NativeOcr("models", false, 0)) {
+    OcrResult result = ocr.recognizeFileDetailed("models/sample.jpg");
+    for (OcrLine line : result.getLines()) {
+        System.out.println(line.getText());
+        float[] box = line.getBox(); // x1,y1,x2,y2,x3,y3,x4,y4
+        System.out.println("det=" + line.getDetScore()
+                + " rec=" + line.getRecScore());
+    }
+}
+```
+
+`OcrLine` 使用原图坐标系，`box` 是顺时针四点四边形，不承诺某个点一定
+是左上角。`OcrResult` 提供解码后的宽高和不可变的有序行列表。Java 8 API
+会防御性复制坐标数组。一个 `NativeOcr` 实例内部串行化调用；`close()` 可重复
+调用，关闭后识别会抛出 `IllegalStateException`。
 
 JNI 会把 Java UTF-16 路径转换成标准 UTF-8，并手动把 OCR 的 UTF-8 转成 Java
 字符串，不使用 `NewStringUTF`，因此中文路径和扩展 Unicode 不会被误当成
 Modified UTF-8。
 
-本示例暂不包含 Swing/JavaFX UI、Android、Maven 发布、native 自动下载、PDF、
-批量 OCR 或完整坐标/分数对象模型。
+本示例暂不包含 Swing/JavaFX UI、Android、Maven 发布、native 自动下载、PDF
+或批量 OCR。

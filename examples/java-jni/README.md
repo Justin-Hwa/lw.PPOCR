@@ -23,6 +23,8 @@ cmake --build build-java-jni
 
 javac -encoding UTF-8 -d build-java-classes \
   examples/java-jni/java/NativeOcr.java \
+  examples/java-jni/java/OcrLine.java \
+  examples/java-jni/java/OcrResult.java \
   examples/java-jni/java/OcrDemo.java
 
 java -Djava.library.path=build-java-jni \
@@ -60,7 +62,7 @@ still a preview integration bundle, not a stable Java ABI promise.
 After extracting a bundle, compile and run the included example from its root:
 
 ```powershell
-javac -encoding UTF-8 -d classes java\NativeOcr.java java\OcrDemo.java
+javac -encoding UTF-8 -d classes java\NativeOcr.java java\OcrLine.java java\OcrResult.java java\OcrDemo.java
 $env:Path = "$(Resolve-Path .\native);$env:Path"
 java "-Djava.library.path=$(Resolve-Path .\native)" -cp classes OcrDemo `
   "$(Resolve-Path .\models)" "$(Resolve-Path .\models\sample.jpg)"
@@ -69,7 +71,7 @@ java "-Djava.library.path=$(Resolve-Path .\native)" -cp classes OcrDemo `
 On Linux:
 
 ```bash
-javac -encoding UTF-8 -d classes java/NativeOcr.java java/OcrDemo.java
+javac -encoding UTF-8 -d classes java/NativeOcr.java java/OcrLine.java java/OcrResult.java java/OcrDemo.java
 java -Djava.library.path="$PWD/native" -cp classes OcrDemo \
   "$PWD/models" "$PWD/models/sample.jpg"
 ```
@@ -83,15 +85,32 @@ try (NativeOcr ocr = new NativeOcr("models", false, 0)) {
 }
 ```
 
-`workerCount = 0` selects the runtime default. `recognizeFile` returns ordered
-text only; coordinates and scores are intentionally left to a future binding.
-One `NativeOcr` instance serializes its operations. Calling `close()` more than
-once is safe, while recognition after close throws `IllegalStateException`.
+`workerCount = 0` selects the runtime default. `recognizeFile` remains the
+compatibility text-only API. For coordinates and confidence scores, use the
+detailed result API:
+
+```java
+try (NativeOcr ocr = new NativeOcr("models", false, 0)) {
+    OcrResult result = ocr.recognizeFileDetailed("models/sample.jpg");
+    for (OcrLine line : result.getLines()) {
+        System.out.println(line.getText());
+        float[] box = line.getBox(); // x1,y1,x2,y2,x3,y3,x4,y4
+        System.out.println("det=" + line.getDetScore()
+                + " rec=" + line.getRecScore());
+    }
+}
+```
+
+`OcrLine` uses the source-image coordinate system and stores a clockwise
+four-point quadrilateral; no top-left ordering is implied. `OcrResult` exposes
+the decoded image width, height, and an immutable ordered line list. The Java
+8 API defensively copies coordinate arrays. One `NativeOcr` instance
+serializes its operations. Calling `close()` more than once is safe, while
+recognition after close throws `IllegalStateException`.
 
 The JNI bridge converts Java UTF-16 paths to standard UTF-8 and decodes OCR
 UTF-8 output without `NewStringUTF`, so non-ASCII paths and supplementary
 Unicode are not silently treated as Modified UTF-8.
 
 The example intentionally does not provide Swing/JavaFX UI, Android support,
-Maven publishing, native auto-download, PDF, batch OCR, or a complete result
-object model.
+Maven publishing, native auto-download, PDF, or batch OCR.

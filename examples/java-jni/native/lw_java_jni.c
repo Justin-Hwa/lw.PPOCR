@@ -330,83 +330,87 @@ fail:
     return 0;
 }
 
-JNIEXPORT jobjectArray JNICALL Java_NativeOcr_nativeRecognize(
-        JNIEnv* env, jclass clazz, jlong handle, jbyteArray bgr, jint width, jint height,
-        jint stride) {
-    lw_java_engine* engine = (lw_java_engine*)(intptr_t)handle;
+static int run_ocr(JNIEnv* env, lw_java_engine* engine, jbyteArray bgr, jint width,
+                   jint height, jint stride, lw_ocr_result* result) {
     jsize array_length;
-    jbyte* pixels;
+    jbyte* pixels = NULL;
     uint64_t minimum_stride;
     uint64_t required_bytes;
-    lw_ocr_result result;
     lw_error error;
     lw_status status;
-    jclass string_class;
-    jobjectArray output;
-    uint32_t index;
-    (void)clazz;
 
     if (engine == NULL || bgr == NULL || width <= 0 || height <= 0 || stride <= 0) {
         throw_runtime(env, "invalid OCR image or closed engine");
-        return NULL;
+        return 0;
     }
     minimum_stride = (uint64_t)(uint32_t)width * 3u;
     if ((uint64_t)(uint32_t)stride < minimum_stride) {
         throw_runtime(env, "OCR stride is smaller than width * 3");
-        return NULL;
+        return 0;
     }
     required_bytes = (uint64_t)(uint32_t)stride * (uint64_t)(uint32_t)height;
     array_length = (*env)->GetArrayLength(env, bgr);
     if (required_bytes > (uint64_t)(uint32_t)array_length ||
         required_bytes > (uint64_t)SIZE_MAX) {
         throw_runtime(env, "OCR byte array is smaller than the requested image");
-        return NULL;
+        return 0;
     }
     pixels = (*env)->GetByteArrayElements(env, bgr, NULL);
     if (pixels == NULL)
-        return NULL;
-    lw_ocr_result_init(&result);
+        return 0;
+    lw_ocr_result_init(result);
     lw_error_init(&error);
     status = lw_ocr_run_bgr_u8(engine->ocr, (const uint8_t*)pixels, required_bytes,
                                (uint32_t)width, (uint32_t)height, (uint32_t)stride, engine->lines,
                                engine->info.max_line_capacity, engine->text,
-                               engine->info.max_text_capacity, &result, &error);
+                               engine->info.max_text_capacity, result, &error);
     (*env)->ReleaseByteArrayElements(env, bgr, pixels, JNI_ABORT);
     if (status != LW_STATUS_OK) {
         throw_status(env, status, &error);
-        return NULL;
+        return 0;
     }
-    if (result.line_count > engine->info.max_line_capacity ||
-        result.required_text_capacity > engine->info.max_text_capacity ||
-        result.line_count > (uint32_t)INT32_MAX) {
+    if (result->line_count > engine->info.max_line_capacity ||
+        result->required_text_capacity > engine->info.max_text_capacity ||
+        result->line_count > (uint32_t)INT32_MAX) {
         throw_runtime(env, "OCR returned invalid output capacities");
+        return 0;
+    }
+    return 1;
+}
+
+static jstring line_text(JNIEnv* env, const lw_java_engine* engine,
+                         const lw_ocr_result* result, uint32_t index) {
+    const lw_ocr_line* line = &engine->lines[index];
+    uint64_t remaining;
+    if (line->text_offset >= result->required_text_capacity) {
+        throw_runtime(env, "OCR text offset is out of bounds");
         return NULL;
     }
+    remaining = result->required_text_capacity - line->text_offset;
+    if (line->text_length >= remaining ||
+        engine->text[line->text_offset + line->text_length] != '\0') {
+        throw_runtime(env, "OCR text length is out of bounds");
+        return NULL;
+    }
+    return utf8_to_jstring(env, engine->text + (size_t)line->text_offset,
+                           (size_t)line->text_length);
+}
+
+static jobjectArray create_text_array(JNIEnv* env, const lw_java_engine* engine,
+                                      const lw_ocr_result* result) {
+    jclass string_class;
+    jobjectArray output;
+    uint32_t index;
     string_class = (*env)->FindClass(env, "java/lang/String");
     if (string_class == NULL)
         return NULL;
-    output = (*env)->NewObjectArray(env, (jsize)result.line_count, string_class, NULL);
+    output = (*env)->NewObjectArray(env, (jsize)result->line_count, string_class, NULL);
     (*env)->DeleteLocalRef(env, string_class);
     if (output == NULL)
         return NULL;
-    for (index = 0u; index < result.line_count; ++index) {
-        const lw_ocr_line* line = &engine->lines[index];
+    for (index = 0u; index < result->line_count; ++index) {
         jstring text;
-        uint64_t remaining;
-        if (line->text_offset >= result.required_text_capacity) {
-            (*env)->DeleteLocalRef(env, output);
-            throw_runtime(env, "OCR text offset is out of bounds");
-            return NULL;
-        }
-        remaining = result.required_text_capacity - line->text_offset;
-        if (line->text_length >= remaining ||
-            engine->text[line->text_offset + line->text_length] != '\0') {
-            (*env)->DeleteLocalRef(env, output);
-            throw_runtime(env, "OCR text length is out of bounds");
-            return NULL;
-        }
-        text = utf8_to_jstring(env, engine->text + (size_t)line->text_offset,
-                               (size_t)line->text_length);
+        text = line_text(env, engine, result, index);
         if (text == NULL) {
             (*env)->DeleteLocalRef(env, output);
             return NULL;
@@ -419,6 +423,101 @@ JNIEXPORT jobjectArray JNICALL Java_NativeOcr_nativeRecognize(
         }
     }
     return output;
+}
+
+JNIEXPORT jobjectArray JNICALL Java_NativeOcr_nativeRecognize(
+        JNIEnv* env, jclass clazz, jlong handle, jbyteArray bgr, jint width, jint height,
+        jint stride) {
+    lw_java_engine* engine = (lw_java_engine*)(intptr_t)handle;
+    lw_ocr_result result;
+    (void)clazz;
+    if (!run_ocr(env, engine, bgr, width, height, stride, &result))
+        return NULL;
+    return create_text_array(env, engine, &result);
+}
+
+static jobject create_native_result(JNIEnv* env, const lw_java_engine* engine,
+                                    const lw_ocr_result* result, jint width, jint height) {
+    uint32_t index;
+    jsize box_length;
+    jobjectArray texts;
+    jfloatArray boxes;
+    jfloatArray detector_scores;
+    jfloatArray recognition_scores;
+    jclass packet_class;
+    jmethodID constructor;
+    jobject packet;
+
+    if (result->line_count > (uint32_t)(INT32_MAX / 8)) {
+        throw_runtime(env, "OCR result has too many lines");
+        return NULL;
+    }
+    texts = create_text_array(env, engine, result);
+    if (texts == NULL)
+        return NULL;
+    box_length = (jsize)(result->line_count * 8u);
+    boxes = (*env)->NewFloatArray(env, box_length);
+    detector_scores = (*env)->NewFloatArray(env, (jsize)result->line_count);
+    recognition_scores = (*env)->NewFloatArray(env, (jsize)result->line_count);
+    if (boxes == NULL || detector_scores == NULL || recognition_scores == NULL) {
+        (*env)->DeleteLocalRef(env, texts);
+        if (boxes != NULL) (*env)->DeleteLocalRef(env, boxes);
+        if (detector_scores != NULL) (*env)->DeleteLocalRef(env, detector_scores);
+        if (recognition_scores != NULL) (*env)->DeleteLocalRef(env, recognition_scores);
+        return NULL;
+    }
+    for (index = 0u; index < result->line_count; ++index) {
+        const lw_ocr_line* line = &engine->lines[index];
+        const jfloat coordinates[8] = {
+            line->box.x1, line->box.y1, line->box.x2, line->box.y2,
+            line->box.x3, line->box.y3, line->box.x4, line->box.y4
+        };
+        (*env)->SetFloatArrayRegion(env, boxes, (jsize)(index * 8u), 8, coordinates);
+        (*env)->SetFloatArrayRegion(env, detector_scores, (jsize)index, 1, &line->box.score);
+        (*env)->SetFloatArrayRegion(env, recognition_scores, (jsize)index, 1,
+                                    &line->recognition_score);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->DeleteLocalRef(env, texts);
+            (*env)->DeleteLocalRef(env, boxes);
+            (*env)->DeleteLocalRef(env, detector_scores);
+            (*env)->DeleteLocalRef(env, recognition_scores);
+            return NULL;
+        }
+    }
+    packet_class = (*env)->FindClass(env, "NativeOcr$NativeResult");
+    if (packet_class == NULL) goto fail;
+    constructor = (*env)->GetMethodID(env, packet_class, "<init>",
+                                      "(II[Ljava/lang/String;[F[F[F)V");
+    if (constructor == NULL) {
+        (*env)->DeleteLocalRef(env, packet_class);
+        goto fail;
+    }
+    packet = (*env)->NewObject(env, packet_class, constructor, width, height,
+                               texts, boxes, detector_scores, recognition_scores);
+    (*env)->DeleteLocalRef(env, packet_class);
+    (*env)->DeleteLocalRef(env, texts);
+    (*env)->DeleteLocalRef(env, boxes);
+    (*env)->DeleteLocalRef(env, detector_scores);
+    (*env)->DeleteLocalRef(env, recognition_scores);
+    return packet;
+
+fail:
+    (*env)->DeleteLocalRef(env, texts);
+    (*env)->DeleteLocalRef(env, boxes);
+    (*env)->DeleteLocalRef(env, detector_scores);
+    (*env)->DeleteLocalRef(env, recognition_scores);
+    return NULL;
+}
+
+JNIEXPORT jobject JNICALL Java_NativeOcr_nativeRecognizeDetailed(
+        JNIEnv* env, jclass clazz, jlong handle, jbyteArray bgr, jint width, jint height,
+        jint stride) {
+    lw_java_engine* engine = (lw_java_engine*)(intptr_t)handle;
+    lw_ocr_result result;
+    (void)clazz;
+    if (!run_ocr(env, engine, bgr, width, height, stride, &result))
+        return NULL;
+    return create_native_result(env, engine, &result, width, height);
 }
 
 JNIEXPORT void JNICALL Java_NativeOcr_nativeSetReadingOrder(
