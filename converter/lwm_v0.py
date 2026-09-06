@@ -60,6 +60,10 @@ OP_IDS = {
     "MaxPool": 19,
     "Resize": 20,
     "Sigmoid": 21,
+    "Sub": 22,
+    "Sqrt": 23,
+    "Pow": 24,
+    "Slice": 25,
 }
 
 PARAM_SIZES = {
@@ -76,6 +80,7 @@ PARAM_SIZES = {
     OP_IDS["ConvTranspose"]: 64,
     OP_IDS["MaxPool"]: 64,
     OP_IDS["Resize"]: 32,
+    OP_IDS["Slice"]: 136,
 }
 
 
@@ -228,6 +233,28 @@ def encode_params(node: onnx.NodeProto) -> bytes:
         if len(scales) != 4:
             raise ValueError("Resize scales must contain four values")
         return struct.pack("<HH4f3I", 1, 4, *scales, 0, 0, 0)
+    if node.op_type == "Slice":
+        starts = _int_list(attrs, "starts", [])
+        ends = _int_list(attrs, "ends", [])
+        count = len(starts)
+        if count == 0 or count > MAX_DIMS or len(ends) != count:
+            raise ValueError("Slice starts and ends must contain one to eight values")
+        axes = _int_list(attrs, "axes", list(range(count)))
+        steps = _int_list(attrs, "steps", [1] * count)
+        if len(axes) != count or len(steps) != count:
+            raise ValueError("Slice axes and steps must match starts length")
+        if any(step <= 0 for step in steps):
+            raise ValueError("Slice only supports positive steps")
+        return struct.pack(
+            "<HH8i8i8i8iI",
+            1,
+            count,
+            *(starts + [0] * (MAX_DIMS - count)),
+            *(ends + [0] * (MAX_DIMS - count)),
+            *(axes + [0] * (MAX_DIMS - count)),
+            *(steps + [0] * (MAX_DIMS - count)),
+            0,
+        )
     if attrs:
         raise ValueError(f"unexpected attributes on {node.op_type}: {sorted(attrs)}")
     return b""
@@ -376,7 +403,10 @@ def _build_records(
     for node in graph.node:
         if node.op_type == "Identity":
             continue
-        inputs = [indexes[_resolve_alias(name, aliases)] for name in node.input]
+        if node.op_type in ("Slice", "Reshape") and len(node.input) > 1:
+            inputs = [indexes[_resolve_alias(node.input[0], aliases)]]
+        else:
+            inputs = [indexes[_resolve_alias(name, aliases)] for name in node.input]
         outputs = [indexes[name] for name in node.output]
         params = encode_params(node)
         op = OP_IDS[node.op_type]
@@ -555,6 +585,55 @@ def _fold_conv_batch_normalization(model: onnx.ModelProto) -> onnx.ModelProto:
     return converted
 
 
+def _materialize_slice_inputs(model: onnx.ModelProto) -> onnx.ModelProto:
+    """Rewrite opset-10+ Slice control tensors into fixed operator attributes."""
+    converted = copy.deepcopy(model)
+    initializers = {
+        item.name: np.asarray(numpy_helper.to_array(item)).reshape(-1)
+        for item in model.graph.initializer
+    }
+    rewritten_nodes: list[onnx.NodeProto] = []
+    for node in converted.graph.node:
+        if node.op_type != "Slice":
+            replacement = copy.deepcopy(node)
+            if replacement.op_type == "Reshape" and len(replacement.input) > 1:
+                del replacement.input[1:]
+            rewritten_nodes.append(replacement)
+            continue
+        if len(node.input) == 1:
+            rewritten_nodes.append(copy.deepcopy(node))
+            continue
+        if len(node.input) < 3 or any(name not in initializers for name in node.input[1:]):
+            raise ValueError("Slice control inputs must be constant initializers")
+        starts = [int(value) for value in initializers[node.input[1]]]
+        ends = [int(value) for value in initializers[node.input[2]]]
+        axes = ([int(value) for value in initializers[node.input[3]]]
+                if len(node.input) >= 4 else list(range(len(starts))))
+        steps = ([int(value) for value in initializers[node.input[4]]]
+                 if len(node.input) >= 5 else [1] * len(starts))
+        rewritten_nodes.append(
+            onnx.helper.make_node(
+                "Slice",
+                list(node.input),
+                list(node.output),
+                name=node.name,
+                starts=starts,
+                ends=ends,
+                axes=axes,
+                steps=steps,
+            )
+        )
+    del converted.graph.node[:]
+    converted.graph.node.extend(rewritten_nodes)
+    used_initializers = {name for node in converted.graph.node for name in node.input}
+    retained_initializers = [
+        item for item in converted.graph.initializer if item.name in used_initializers
+    ]
+    del converted.graph.initializer[:]
+    converted.graph.initializer.extend(retained_initializers)
+    return converted
+
+
 def convert_rec_model(input_path: Path, output_path: Path) -> ConversionInfo:
     digest = hashlib.sha256(input_path.read_bytes()).hexdigest()
     if digest != SUPPORTED_REC_SHA256:
@@ -570,6 +649,7 @@ def convert_rec_model(input_path: Path, output_path: Path) -> ConversionInfo:
     if len(model.graph.input) != 1 or len(model.graph.output) != 1:
         raise ValueError("REC converter requires exactly one graph input and one graph output")
 
+    model = _materialize_slice_inputs(model)
     inferred = onnx.shape_inference.infer_shapes(model, strict_mode=True, data_prop=False)
     return _write_model(_fold_conv_batch_normalization(model), output_path, inferred)
 

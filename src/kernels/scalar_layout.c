@@ -394,3 +394,113 @@ lw_status lw_scalar_resize_nearest_f32(const float* input, float* output, uint32
     }
     return LW_STATUS_OK;
 }
+
+static int slice_bounds(int32_t dimension, int32_t start, int32_t end, int32_t step,
+                        int32_t* first, int32_t* length) {
+    int64_t normalized_start = start;
+    int64_t normalized_end = end;
+    int64_t count;
+    if (dimension <= 0 || step <= 0) {
+        return 0;
+    }
+    if (normalized_start == INT32_MIN) {
+        normalized_start = 0;
+    } else if (normalized_start < 0) {
+        normalized_start += dimension;
+    }
+    if (normalized_end == INT32_MAX) {
+        normalized_end = dimension;
+    } else if (normalized_end < 0) {
+        normalized_end += dimension;
+    }
+    if (normalized_start < 0) {
+        normalized_start = 0;
+    } else if (normalized_start > dimension) {
+        normalized_start = dimension;
+    }
+    if (normalized_end < 0) {
+        normalized_end = 0;
+    } else if (normalized_end > dimension) {
+        normalized_end = dimension;
+    }
+    count = normalized_end <= normalized_start
+                ? 0
+                : (normalized_end - normalized_start + step - 1) / step;
+    if (count <= 0 || count > INT32_MAX) {
+        return 0;
+    }
+    *first = (int32_t)normalized_start;
+    *length = (int32_t)count;
+    return 1;
+}
+
+lw_status lw_scalar_slice_f32(const float* input, float* output, uint32_t rank,
+                              const int32_t* input_dimensions, const int32_t* output_dimensions,
+                              uint32_t slice_count, const int32_t* starts, const int32_t* ends,
+                              const int32_t* axes, const int32_t* steps) {
+    uint64_t input_count;
+    uint64_t output_count;
+    uint64_t input_strides[LW_MAX_DIMS] = {0u};
+    int32_t first[LW_MAX_DIMS];
+    int32_t lengths[LW_MAX_DIMS];
+    int32_t slice_steps[LW_MAX_DIMS];
+    int selected[LW_MAX_DIMS] = {0};
+    uint64_t stride = 1u;
+    uint64_t output_index;
+    uint32_t axis;
+    lw_status status;
+    if (input == NULL || output == NULL || input == output || input_dimensions == NULL ||
+        output_dimensions == NULL || starts == NULL || ends == NULL || axes == NULL ||
+        steps == NULL || rank == 0u || rank > LW_MAX_DIMS || slice_count == 0u ||
+        slice_count > rank) {
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    status = tensor_element_count(rank, input_dimensions, &input_count);
+    if (status != LW_STATUS_OK) {
+        return status;
+    }
+    status = tensor_element_count(rank, output_dimensions, &output_count);
+    if (status != LW_STATUS_OK) {
+        return status;
+    }
+    for (axis = rank; axis > 0u; --axis) {
+        input_strides[axis - 1u] = stride;
+        stride *= (uint32_t)input_dimensions[axis - 1u];
+    }
+    for (axis = 0u; axis < rank; ++axis) {
+        first[axis] = 0;
+        lengths[axis] = input_dimensions[axis];
+        slice_steps[axis] = 1;
+    }
+    for (axis = 0u; axis < slice_count; ++axis) {
+        uint32_t normalized_axis;
+        if (!normalize_axis(axes[axis], rank, &normalized_axis) || selected[normalized_axis] ||
+            !slice_bounds(input_dimensions[normalized_axis], starts[axis], ends[axis],
+                          steps[axis], &first[normalized_axis], &lengths[normalized_axis])) {
+            return LW_STATUS_INVALID_SHAPE;
+        }
+        selected[normalized_axis] = 1;
+        slice_steps[normalized_axis] = steps[axis];
+    }
+    for (axis = 0u; axis < rank; ++axis) {
+        if (output_dimensions[axis] != lengths[axis]) {
+            return LW_STATUS_INVALID_SHAPE;
+        }
+    }
+    (void)input_count;
+    for (output_index = 0u; output_index < output_count; ++output_index) {
+        uint64_t remaining = output_index;
+        uint64_t input_offset = 0u;
+        for (axis = rank; axis > 0u; --axis) {
+            uint32_t current_axis = axis - 1u;
+            uint32_t coordinate =
+                (uint32_t)(remaining % (uint32_t)output_dimensions[current_axis]);
+            remaining /= (uint32_t)output_dimensions[current_axis];
+            input_offset += (uint64_t)(first[current_axis] +
+                                       coordinate * (uint32_t)slice_steps[current_axis]) *
+                            input_strides[current_axis];
+        }
+        output[(size_t)output_index] = input[(size_t)input_offset];
+    }
+    return LW_STATUS_OK;
+}

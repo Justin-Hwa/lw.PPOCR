@@ -80,3 +80,15 @@ lw_status lw_scalar_sigmoid_f32(const float* input, float* output, uint64_t elem
     }
     return LW_STATUS_OK;
 }
+
+lw_status lw_scalar_sqrt_f32(const float* input, float* output, uint64_t element_count) {
+    uint64_t index;
+    lw_status status = validate_elementwise(input, output, element_count);
+    if (status != LW_STATUS_OK) {
+        return status;
+    }
+    for (index = 0u; index < element_count; ++index) {
+        output[(size_t)index] = sqrtf(input[(size_t)index]);
+    }
+    return LW_STATUS_OK;
+}

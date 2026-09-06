@@ -92,6 +92,7 @@ def expected_results() -> dict[str, np.ndarray]:
     reduce_input = tensor_input[:24].reshape(2, 3, 4)
     pool_input = tensor_input.reshape(1, 2, 3, 5)
     resize_multi_input = tensor_input[:24].reshape(2, 2, 2, 3)
+    slice_input = tensor_input[:24].reshape(2, 3, 4)
     matmul_input = np.asarray(
         [(((index * 3) % 13) - 6) / 4.0 for index in range(24)],
         dtype=np.float32,
@@ -100,6 +101,8 @@ def expected_results() -> dict[str, np.ndarray]:
         [(((index * 7) % 11) - 5) / 5.0 for index in range(20)],
         dtype=np.float32,
     ).reshape(4, 5)
+    batched_matmul_input = np.arange(1, 13, dtype=np.float32).reshape(2, 1, 2, 3)
+    batched_matmul_weights = np.arange(1, 25, dtype=np.float32).reshape(1, 2, 3, 4)
     squeezed = np.squeeze(reshape_input, axis=(1, 3))
     return {
         "transpose": np.transpose(transpose_input, (0, 2, 1)).ravel(),
@@ -139,6 +142,7 @@ def expected_results() -> dict[str, np.ndarray]:
         "resize_nearest_nchw": np.repeat(
             np.repeat(resize_multi_input, 2, axis=2), 3, axis=3
         ).ravel(),
+        "slice": slice_input[:, 1:3, 0:4:2].ravel(),
         "resize_nearest_fractional": np.repeat(
             np.asarray([-3, -2, -1, -3, -2, -1, 1, 2, 3], dtype=np.float32)
             .reshape(1, 1, 3, 3),
@@ -147,6 +151,7 @@ def expected_results() -> dict[str, np.ndarray]:
         ).ravel(),
         "matmul": np.matmul(matmul_input, matmul_weights).ravel(),
         "matmul_dispatched": np.matmul(matmul_input, matmul_weights).ravel(),
+        "batched_matmul": np.matmul(batched_matmul_input, batched_matmul_weights).ravel(),
     }
 
 

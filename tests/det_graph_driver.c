@@ -1,3 +1,7 @@
+#if defined(_MSC_VER)
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "executor_internal.h"
 #include "lw_infer.h"
 

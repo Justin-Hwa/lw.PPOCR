@@ -128,6 +128,10 @@ fixed-width fields and have an exact size checked by the loader.
 | 19 | MaxPool | 64 |
 | 20 | Resize | 32 |
 | 21 | Sigmoid | 0 |
+| 22 | Sub | 0 |
+| 23 | Sqrt | 0 |
+| 24 | Pow | 0 |
+| 25 | Slice | 136 |
 
 The writer normalizes omitted ONNX attributes to opset-11 defaults before
 encoding them. Conv and pooling records contain rank, kernel, stride, dilation,

@@ -14,7 +14,9 @@
 typedef enum lw_scalar_binary_op {
     LW_SCALAR_BINARY_ADD = 1,
     LW_SCALAR_BINARY_MUL = 2,
-    LW_SCALAR_BINARY_DIV = 3
+    LW_SCALAR_BINARY_DIV = 3,
+    LW_SCALAR_BINARY_SUB = 4,
+    LW_SCALAR_BINARY_POW = 5
 } lw_scalar_binary_op;
 
 void lw_scalar_binary_contiguous_f32(lw_scalar_binary_op operation, const float* left,
@@ -32,6 +34,7 @@ lw_status lw_scalar_erf_f32(const float* input, float* output, uint64_t element_
 lw_status lw_scalar_hard_sigmoid_f32(const float* input, float* output, uint64_t element_count,
                                      float alpha, float beta);
 lw_status lw_scalar_sigmoid_f32(const float* input, float* output, uint64_t element_count);
+lw_status lw_scalar_sqrt_f32(const float* input, float* output, uint64_t element_count);
 lw_status lw_scalar_softmax_f32(const float* input, float* output, uint32_t rank,
                                 const int32_t* dimensions, int32_t axis);
 lw_status lw_scalar_transpose_f32(const float* input, float* output, uint32_t rank,
@@ -55,6 +58,10 @@ lw_status lw_scalar_concat_f32(const float* const* inputs, uint32_t input_count,
 lw_status lw_scalar_resize_nearest_f32(const float* input, float* output, uint32_t rank,
                                        const int32_t* input_dimensions,
                                        const int32_t* output_dimensions, const float* scales);
+lw_status lw_scalar_slice_f32(const float* input, float* output, uint32_t rank,
+                              const int32_t* input_dimensions, const int32_t* output_dimensions,
+                              uint32_t slice_count, const int32_t* starts, const int32_t* ends,
+                              const int32_t* axes, const int32_t* steps);
 lw_status lw_scalar_reduce_mean_f32(const float* input, float* output, uint32_t input_rank,
                                     const int32_t* input_dimensions, uint32_t axes_count,
                                     const int32_t* axes, uint32_t keep_dimensions,
@@ -73,6 +80,10 @@ lw_status lw_scalar_max_pool2d_f32(const float* input, float* output,
 lw_status lw_scalar_matmul_shared_f32(const float* input, const float* weights, float* output,
                                       uint32_t batch_count, uint32_t rows, uint32_t inner_dimension,
                                       uint32_t columns);
+lw_status lw_scalar_matmul_f32(const float* input, const float* weights, float* output,
+                               uint32_t input_rank, const int32_t* input_dimensions,
+                               uint32_t weights_rank, const int32_t* weights_dimensions,
+                               uint32_t output_rank, const int32_t* output_dimensions);
 lw_status lw_matmul_shared_f32(const float* input, const float* weights, float* output,
                                uint32_t batch_count, uint32_t rows, uint32_t inner_dimension,
                                uint32_t columns);

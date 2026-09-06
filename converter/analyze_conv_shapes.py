@@ -205,10 +205,14 @@ def render(dist: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", action="append", type=A._parse_model)
+    parser.add_argument(
+        "--model-dir", type=pathlib.Path, default=A.DEFAULT_MODEL_DIR,
+        help="directory containing conventional det.onnx, cls.onnx, and rec.onnx",
+    )
     parser.add_argument("--input-shape", action="append", type=A._parse_shape)
     args = parser.parse_args(argv)
 
-    model_items = args.model or list(A.DEFAULT_MODELS.items())
+    model_items = args.model or list(A.model_paths(args.model_dir).items())
     shapes = dict(A.DEFAULT_REPRESENTATIVE_SHAPES)
     if args.input_shape:
         shapes.update(args.input_shape)

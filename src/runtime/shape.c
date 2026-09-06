@@ -88,6 +88,36 @@ static int normalize_axis(int32_t axis, uint32_t rank, uint32_t* normalized) {
     return 1;
 }
 
+static int slice_bounds(int32_t dimension, int32_t start, int32_t end, int32_t step,
+                        int32_t* length) {
+    int64_t normalized_start = start;
+    int64_t normalized_end = end;
+    int64_t count;
+    if (dimension <= 0 || step <= 0) {
+        return 0;
+    }
+    if (normalized_start == INT32_MIN) {
+        normalized_start = 0;
+    } else if (normalized_start < 0) {
+        normalized_start += dimension;
+    }
+    if (normalized_end == INT32_MAX) {
+        normalized_end = dimension;
+    } else if (normalized_end < 0) {
+        normalized_end += dimension;
+    }
+    if (normalized_start < 0) normalized_start = 0;
+    if (normalized_start > dimension) normalized_start = dimension;
+    if (normalized_end < 0) normalized_end = 0;
+    if (normalized_end > dimension) normalized_end = dimension;
+    count = normalized_end <= normalized_start
+                ? 0
+                : (normalized_end - normalized_start + step - 1) / step;
+    if (count <= 0 || count > INT32_MAX) return 0;
+    *length = (int32_t)count;
+    return 1;
+}
+
 static int broadcast_dimension(int32_t left, int32_t right, int32_t* output) {
     if (left == right) {
         *output = left;
@@ -190,7 +220,7 @@ static lw_status resolve_node(lw_session* session, const uint8_t* node, uint64_t
     }
     output = &session->tensors[lwm_read_u32(node + 40)];
 
-    if (op == 2u || op == 3u || op == 4u) {
+    if (op == 2u || op == 3u || op == 4u || op == 22u || op == 24u) {
         if (input_count != 2u) {
             return shape_fail(error, "elementwise node has invalid arity");
         }
@@ -198,7 +228,7 @@ static lw_status resolve_node(lw_session* session, const uint8_t* node, uint64_t
         if (status != LW_STATUS_OK) {
             return status;
         }
-    } else if (op == 5u || op == 6u || op == 9u || op == 15u || op == 21u) {
+    } else if (op == 5u || op == 6u || op == 9u || op == 15u || op == 21u || op == 23u) {
         if (input_count != 1u) {
             return shape_fail(error, "unary node has invalid arity");
         }
@@ -209,6 +239,26 @@ static lw_status resolve_node(lw_session* session, const uint8_t* node, uint64_t
             if (!normalize_axis(lwm_read_i32(params + 4), rank, &axis)) {
                 return shape_fail(error, "Softmax axis is outside the input rank");
             }
+        }
+    } else if (op == 25u) {
+        uint32_t slice_count = lwm_read_u16(params + 2u);
+        int selected[LW_MAX_DIMS] = {0};
+        if (input_count != 1u || slice_count == 0u || slice_count > inputs[0]->rank) {
+            return shape_fail(error, "Slice has invalid arity or count");
+        }
+        rank = inputs[0]->rank;
+        memcpy(dimensions, inputs[0]->dimensions, sizeof(dimensions));
+        for (i = 0u; i < slice_count; ++i) {
+            uint32_t axis;
+            if (!normalize_axis(lwm_read_i32(params + 68u + i * 4u), rank, &axis) ||
+                selected[axis] || !slice_bounds(inputs[0]->dimensions[axis],
+                                                 lwm_read_i32(params + 4u + i * 4u),
+                                                 lwm_read_i32(params + 36u + i * 4u),
+                                                 lwm_read_i32(params + 100u + i * 4u),
+                                                 &dimensions[axis])) {
+                return shape_fail(error, "Slice bounds are invalid");
+            }
+            selected[axis] = 1;
         }
     } else if (op == 1u) {
         uint32_t group;

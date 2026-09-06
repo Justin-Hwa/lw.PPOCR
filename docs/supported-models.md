@@ -1,5 +1,26 @@
 # Supported models
 
+## Production-supported
+
+| Family | Variant | DET | CLS | REC | Full OCR |
+|---|---|---|---|---|---|
+| PP-OCRv6 | Tiny | ✅ | ✅ | ✅ | ✅ |
+
+## Analysis-only
+
+| Family | Variant | ONNX analysis | Converter | Runtime / release |
+|---|---|---|---|---|
+| PP-OCRv6 | Small | external model directory supported | not yet verified | not supported |
+| PP-OCRv6 | Medium | external model directory supported | not yet verified | not supported |
+
+Analysis-only means that ONNX checker, shape inference, operator inventory, and
+FLOP reporting may be run when the model assets are supplied. It is not a
+public support claim and does not add the variant to C ABI, Android, WASM, or
+release packages.
+
+See the [PP-OCRv6 Small analysis snapshot](ppocrv6-small-analysis.md) for the
+current graph-size and operator Go/No-Go findings.
+
 The exact REC, fixed-batch CLS, and DET models are exposed through experimental
 public C APIs. REC is verified through preprocessing, its full graph, and UTF-8
 CTC decoding. CLS is verified through preprocessing, its full graph, and the
@@ -8,6 +29,8 @@ DB-style quadrilateral postprocessing, and original-coordinate restoration.
 The exact three-model composition is also verified through pure-C perspective
 crop, optional direction correction, and UTF-8 full-image output. Encoded
 image-file decoding stays outside the core API.
+
+### Tiny asset hashes
 
 The following exact conversion inputs are analysis-verified. All three are
 converter-, loader-, workspace-planner-, full-graph-output-, and public-pipeline

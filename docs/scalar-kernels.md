@@ -11,8 +11,12 @@ interfaces; they are not part of the public C ABI yet.
 | Add | 52 | Contiguous FP32 with rank-aligned broadcasting |
 | Mul | 25 | Contiguous FP32 with rank-aligned broadcasting |
 | Div | 10 | Contiguous FP32 with rank-aligned broadcasting |
+| Sub | experimental | Portable FP32 subtraction with rank-aligned broadcasting |
+| Pow | experimental | Portable FP32 power with rank-aligned broadcasting |
 | Erf | 10 | C `erff` elementwise implementation |
 | HardSigmoid | 5 | Configurable alpha/beta and `[0, 1]` clamp |
+| Sqrt | experimental | Portable scalar square-root elementwise implementation |
+| Slice | experimental | Rank-preserving positive-step float slicing with up to eight axes |
 | Relu | 3 | Elementwise zero clamp |
 | Softmax | 1 | Stable max-subtracted implementation on any valid axis |
 | ReduceMean | 3 | Multi-axis reduction with keep-dim and empty-axis behavior |
@@ -20,7 +24,7 @@ interfaces; they are not part of the public C ABI yet.
 | Squeeze | 3 | Validated shape-only layout copy |
 | Transpose | 3 | Contiguous rank-aware permutation |
 | Unsqueeze | 2 | Validated shape-only layout copy |
-| MatMul | 2 | Batched input matrices with one shared 2D weight matrix |
+| MatMul | 2 | Batched input matrices with one shared 2D weight matrix, plus experimental broadcast-batch fallback |
 | Conv | 37 | NCHW normal, grouped, and Depthwise convolution |
 | BatchNormalization | 2 | Inference-mode channel normalization; two shared REC paths remain unfused |
 | **Total** | **159 / 159** | Kernel available and reference-tested |
@@ -81,9 +85,12 @@ verified until that workflow runs remotely.
 The public recognizer API now wraps the private executor, preprocessing, and
 CTC decoder without exposing kernel or tensor internals. The executor dispatches
 all 159 converted REC nodes, binds constants/workspace, and passes
-complete-output comparison. The MatMul contract deliberately
-matches the supported REC graph: one
-or more input matrices multiplied by one shared two-dimensional weight matrix.
+complete-output comparison. The optimized MatMul contract deliberately
+matches the released REC graph: one or more input matrices multiplied by one
+shared two-dimensional weight matrix. A portable general MatMul fallback now
+also accepts rank-N inputs on both sides with ONNX-style broadcast batch
+dimensions; it is reference-tested and is currently used only by the
+analysis-only PP-OCRv6 Small prototype.
 Its cache-contiguous implementation initializes four output rows at a time,
 then scans each shared weight row contiguously across columns. This reuses the
 weight row across the block while preserving the inner-dimension accumulation

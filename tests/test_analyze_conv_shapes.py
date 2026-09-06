@@ -1,9 +1,12 @@
 import pathlib
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
 from converter.analyze_conv_shapes import (
     _conv_channels_and_kind,
     analyze_conv_distribution,
+    main,
 )
 
 
@@ -40,6 +43,17 @@ class ConvShapeAnalysisTests(unittest.TestCase):
         self.assertTrue(depthwise_rows)
         self.assertTrue(all(row["cin"] == row["g"] for row in depthwise_rows))
         self.assertTrue(all(row["cin"] != 1 for row in depthwise_rows))
+
+    def test_model_dir_selects_conventional_inputs(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output):
+            status = main([
+                "--model-dir", str(ROOT / "models" / "ppocrv6-tiny"),
+                "--model", f"det={ROOT / 'models' / 'ppocrv6-tiny' / 'det.onnx'}",
+                "--input-shape", "det=1,3,640,640",
+            ])
+        self.assertEqual(status, 0)
+        self.assertIn("# DET heavy-operator distribution", output.getvalue())
 
 
 if __name__ == "__main__":

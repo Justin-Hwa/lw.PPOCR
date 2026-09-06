@@ -796,6 +796,7 @@ if(LW_BUILD_CSHARP_DEMOS)
                 "${LW_PPOCR_C_DET_LWM}" "${LW_PPOCR_C_CLS_LWM}"
                 "${LW_PPOCR_C_REC_LWM}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/models/ppocrv6-tiny/ppocr_keys.txt"
+                "${CMAKE_CURRENT_SOURCE_DIR}/models/ppocrv6-tiny/model.json"
                 "${CMAKE_CURRENT_SOURCE_DIR}/models/ppocrv6-tiny/sample.jpg"
                 "${LW_MANAGED_MODELS_DIR}/"
         DEPENDS
@@ -815,7 +816,9 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
     add_test(
         NAME model_analysis
         COMMAND "${Python3_EXECUTABLE}" -m unittest -v
-                tests.test_analyze_onnx)
+                tests.test_analyze_onnx tests.test_compare_model_analysis
+                tests.test_model_manifest tests.test_probe_rec_shape_metadata
+                tests.test_experimental_ops)
     set_tests_properties(model_analysis PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -1439,6 +1442,7 @@ install(FILES
     "${LW_PPOCR_C_CLS_LWM}"
     "${LW_PPOCR_C_DET_LWM}"
     "${CMAKE_CURRENT_SOURCE_DIR}/models/ppocrv6-tiny/ppocr_keys.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/models/ppocrv6-tiny/model.json"
     "${LW_PPOCR_C_REC_DEMO_PPM}"
     "${LW_PPOCR_C_DET_DEMO_PPM}"
     "${CMAKE_CURRENT_SOURCE_DIR}/models/ppocrv6-tiny/sample.jpg"

@@ -40,7 +40,11 @@ enum {
     LW_OP_CONV_TRANSPOSE = 18,
     LW_OP_MAX_POOL = 19,
     LW_OP_RESIZE = 20,
-    LW_OP_SIGMOID = 21
+    LW_OP_SIGMOID = 21,
+    LW_OP_SUB = 22,
+    LW_OP_SQRT = 23,
+    LW_OP_POW = 24,
+    LW_OP_SLICE = 25
 };
 
 static float read_f32(const uint8_t* bytes) {
@@ -312,10 +316,16 @@ static lw_status dispatch_node(lw_session* session, const uint8_t* node, uint32_
     }
     case LW_OP_ADD:
     case LW_OP_MUL:
-    case LW_OP_DIV: {
+    case LW_OP_DIV:
+    case LW_OP_SUB:
+    case LW_OP_POW: {
         lw_scalar_binary_op operation =
             op == LW_OP_ADD ? LW_SCALAR_BINARY_ADD
-                            : (op == LW_OP_MUL ? LW_SCALAR_BINARY_MUL : LW_SCALAR_BINARY_DIV);
+                            : (op == LW_OP_MUL ? LW_SCALAR_BINARY_MUL
+                                                : (op == LW_OP_DIV ? LW_SCALAR_BINARY_DIV
+                                                                    : (op == LW_OP_SUB
+                                                                           ? LW_SCALAR_BINARY_SUB
+                                                                           : LW_SCALAR_BINARY_POW)));
         if (input_count != 2u) {
             return LW_STATUS_INVALID_SHAPE;
         }
@@ -413,8 +423,14 @@ static lw_status dispatch_node(lw_session* session, const uint8_t* node, uint32_
     case LW_OP_MATMUL: {
         uint64_t batch_count = 1u;
         uint32_t rank = input_tensors[0]->rank;
-        if (input_count != 2u || rank < 2u || input_tensors[1]->rank != 2u) {
+        if (input_count != 2u || rank < 2u || input_tensors[1]->rank < 2u) {
             return LW_STATUS_UNSUPPORTED;
+        }
+        if (input_tensors[1]->rank != 2u) {
+            return lw_scalar_matmul_f32(inputs[0], inputs[1], output, rank,
+                                        input_tensors[0]->dimensions, input_tensors[1]->rank,
+                                        input_tensors[1]->dimensions, output_tensor->rank,
+                                        output_tensor->dimensions);
         }
         for (index = 0u; index + 2u < rank; ++index) {
             batch_count *= (uint32_t)input_tensors[0]->dimensions[index];
@@ -505,6 +521,30 @@ static lw_status dispatch_node(lw_session* session, const uint8_t* node, uint32_
         return input_count == 1u ? lw_scalar_sigmoid_f32(inputs[0], output,
                                                          tensor_element_count(input_tensors[0]))
                                  : LW_STATUS_INVALID_SHAPE;
+    case LW_OP_SQRT:
+        return input_count == 1u ? lw_scalar_sqrt_f32(inputs[0], output,
+                                                      tensor_element_count(input_tensors[0]))
+                                 : LW_STATUS_INVALID_SHAPE;
+    case LW_OP_SLICE: {
+        int32_t starts[LW_MAX_DIMS];
+        int32_t ends[LW_MAX_DIMS];
+        int32_t axes[LW_MAX_DIMS];
+        int32_t steps[LW_MAX_DIMS];
+        uint32_t slice_count = lwm_read_u16(params + 2u);
+        uint32_t slice_index;
+        if (input_count != 1u || slice_count == 0u || slice_count > LW_MAX_DIMS) {
+            return LW_STATUS_INVALID_SHAPE;
+        }
+        for (slice_index = 0u; slice_index < slice_count; ++slice_index) {
+            starts[slice_index] = lwm_read_i32(params + 4u + slice_index * 4u);
+            ends[slice_index] = lwm_read_i32(params + 36u + slice_index * 4u);
+            axes[slice_index] = lwm_read_i32(params + 68u + slice_index * 4u);
+            steps[slice_index] = lwm_read_i32(params + 100u + slice_index * 4u);
+        }
+        return lw_scalar_slice_f32(inputs[0], output, input_tensors[0]->rank,
+                                   input_tensors[0]->dimensions, output_tensor->dimensions,
+                                   slice_count, starts, ends, axes, steps);
+    }
     default:
         return LW_STATUS_UNSUPPORTED;
     }

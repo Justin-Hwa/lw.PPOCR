@@ -86,6 +86,23 @@ class AnalyzeBundledModelsTest(unittest.TestCase):
             self.assertEqual(len(parsed["models"]), 3)
             self.assertIn("REC dynamic-width propagation", markdown_path.read_text(encoding="utf-8"))
 
+    def test_model_dir_selects_conventional_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            for label, source in analyze_onnx.DEFAULT_MODELS.items():
+                (root / f"{label}.onnx").write_bytes(source.read_bytes())
+            json_path = root / "analysis.json"
+            status = analyze_onnx.main([
+                "--model-dir", str(root),
+                "--json-output", str(json_path),
+            ])
+            self.assertEqual(status, 0)
+            parsed = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [model["label"] for model in parsed["models"]],
+                ["det", "cls", "rec"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

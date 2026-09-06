@@ -22,11 +22,25 @@ from onnx import AttributeProto, ModelProto, TensorProto, helper, shape_inferenc
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_MODELS = {
-    "det": REPO_ROOT / "models" / "ppocrv6-tiny" / "det.onnx",
-    "cls": REPO_ROOT / "models" / "ppocrv6-tiny" / "cls.onnx",
-    "rec": REPO_ROOT / "models" / "ppocrv6-tiny" / "rec.onnx",
-}
+DEFAULT_MODEL_DIR = REPO_ROOT / "models" / "ppocrv6-tiny"
+
+
+def model_paths(model_dir: pathlib.Path) -> dict[str, pathlib.Path]:
+    """Return the conventional PP-OCR det/cls/rec inputs in *model_dir*.
+
+    The model directory is deliberately the only variant-specific concept in
+    this tool.  The analysis itself remains model-agnostic, so Small and
+    experimental models can be inspected without adding variant-specific
+    scripts or changing the runtime ABI.
+    """
+    return {
+        "det": model_dir / "det.onnx",
+        "cls": model_dir / "cls.onnx",
+        "rec": model_dir / "rec.onnx",
+    }
+
+
+DEFAULT_MODELS = model_paths(DEFAULT_MODEL_DIR)
 DEFAULT_REPRESENTATIVE_SHAPES = {
     "det": [1, 3, 640, 640],
     "cls": [1, 3, 80, 160],
@@ -668,6 +682,13 @@ def main(argv: list[str] | None = None) -> int:
         help="model to analyze as LABEL=PATH; defaults to bundled det/cls/rec",
     )
     parser.add_argument(
+        "--model-dir", type=pathlib.Path, default=DEFAULT_MODEL_DIR,
+        help=(
+            "directory containing conventional det.onnx, cls.onnx, and "
+            "rec.onnx files; ignored when --model is supplied"
+        ),
+    )
+    parser.add_argument(
         "--input-shape", action="append", type=_parse_shape,
         help="representative input shape as LABEL=N,C,H,W",
     )
@@ -675,7 +696,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--markdown-output", type=pathlib.Path)
     args = parser.parse_args(argv)
 
-    model_items = args.model or list(DEFAULT_MODELS.items())
+    model_items = args.model or list(model_paths(args.model_dir).items())
     labels = [label for label, _ in model_items]
     if len(labels) != len(set(labels)):
         parser.error("model labels must be unique")

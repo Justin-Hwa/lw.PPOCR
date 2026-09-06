@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Convert the bundled PP-OCRv6 tiny text detector to LWM v0.1."""
+"""Convert a PP-OCR text detector through the shared LWM entry point.
+
+The converter is intentionally path-based. Select the desired detector with
+``--input``; the current lowering policy still validates the exact bundled
+Tiny asset until Small graph support is completed.
+"""
 
 from __future__ import annotations
 

@@ -84,6 +84,8 @@ def expected_results() -> dict[str, np.ndarray]:
         "flat_mul": flat_left * flat_right,
         "right_scalar_mul": flat_left * flat_scalar,
         "flat_div": flat_left / flat_right,
+        "flat_sub": flat_left - flat_right,
+        "flat_pow": np.power(np.abs(flat_left) + np.float32(0.5), np.float32(2.0)),
         "right_scalar_div": flat_left / flat_scalar,
         "relu": np.maximum(activation_input, np.float32(0.0)),
         "erf": np.asarray(
@@ -96,6 +98,7 @@ def expected_results() -> dict[str, np.ndarray]:
             [1.0 / (1.0 + math.exp(-float(value))) for value in activation_input],
             dtype=np.float32,
         ),
+        "sqrt": np.sqrt(np.abs(activation_input) + np.float32(1.0)),
         "softmax": softmax.ravel(),
         "softmax_in_place": softmax.ravel(),
         "softmax_contiguous_axis": softmax_contiguous.ravel(),

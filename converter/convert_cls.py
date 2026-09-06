@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Convert the bundled PP-OCRv6 tiny direction classifier to LWM v0.1."""
+"""Convert a PP-OCR direction classifier through the shared LWM entry point.
+
+The input path, rather than a variant-specific script, determines the source
+asset. The current lowering policy still validates the bundled Tiny asset.
+"""
 
 from __future__ import annotations
 

@@ -76,6 +76,12 @@ int main(void) {
     const int32_t resize_multi_input_dimensions[4] = {2, 2, 2, 3};
     const int32_t resize_multi_output_dimensions[4] = {2, 2, 4, 9};
     const float resize_multi_scales[4] = {1.0f, 1.0f, 2.0f, 3.0f};
+    const int32_t slice_input_dimensions[3] = {2, 3, 4};
+    const int32_t slice_output_dimensions[3] = {2, 2, 2};
+    const int32_t slice_starts[2] = {1, 0};
+    const int32_t slice_ends[2] = {3, 4};
+    const int32_t slice_axes[2] = {1, 2};
+    const int32_t slice_steps[2] = {1, 2};
     const int32_t resize_fractional_output_dimensions[4] = {1, 1, 3, 6};
     const float resize_fractional_scales[4] = {1.0f, 1.0f, 1.5f, 2.0f};
     float tensor_input[30];
@@ -93,11 +99,15 @@ int main(void) {
     float resize_output[24];
     float resize_multi_output[144];
     float resize_fractional_output[18];
+    float slice_output[8];
     float matmul_input[24];
     float matmul_weights[20];
     float matmul_output[30];
     float matmul_dispatched_output[30];
     float matmul_simd_output[30];
+    float batched_matmul_input[12];
+    float batched_matmul_weights[24];
+    float batched_matmul_output[32];
     float packed_matmul_input[256];
     float packed_matmul_weights[1088];
     float packed_matmul_weights_buffer[2048];
@@ -222,6 +232,14 @@ int main(void) {
     }
     print_values("resize_nearest_nchw", resize_multi_output, 144u);
 
+    status = lw_scalar_slice_f32(tensor_input, slice_output, 3u, slice_input_dimensions,
+                                 slice_output_dimensions, 2u, slice_starts, slice_ends,
+                                 slice_axes, slice_steps);
+    if (!expect_status("slice", status, LW_STATUS_OK)) {
+        return 1;
+    }
+    print_values("slice", slice_output, 8u);
+
     /* A fractional height scale must retain the general coordinate path. */
     status = lw_scalar_resize_nearest_f32(
         concat_left, resize_fractional_output, 4u, resize_input_dimensions,
@@ -268,6 +286,48 @@ int main(void) {
         return 1;
     }
     print_values("matmul_dispatched", matmul_dispatched_output, 30u);
+
+    {
+        const int32_t input_dimensions[4] = {2, 1, 2, 3};
+        const int32_t weights_dimensions[4] = {1, 2, 3, 4};
+        const int32_t output_dimensions[4] = {2, 2, 2, 4};
+        uint32_t batch;
+        uint32_t matrix;
+        uint32_t row;
+        uint32_t column;
+        uint32_t inner;
+        uint32_t output_index = 0u;
+        for (index = 0u; index < 12u; ++index) {
+            batched_matmul_input[index] = (float)index + 1.0f;
+        }
+        for (index = 0u; index < 24u; ++index) {
+            batched_matmul_weights[index] = (float)index + 1.0f;
+        }
+        status = lw_scalar_matmul_f32(
+            batched_matmul_input, batched_matmul_weights, batched_matmul_output, 4u,
+            input_dimensions, 4u, weights_dimensions, 4u, output_dimensions);
+        if (!expect_status("batched matmul", status, LW_STATUS_OK)) {
+            return 1;
+        }
+        for (batch = 0u; batch < 2u; ++batch) {
+            for (matrix = 0u; matrix < 2u; ++matrix) {
+                for (row = 0u; row < 2u; ++row) {
+                    for (column = 0u; column < 4u; ++column) {
+                        float expected = 0.0f;
+                        for (inner = 0u; inner < 3u; ++inner) {
+                            expected += batched_matmul_input[batch * 6u + row * 3u + inner] *
+                                        batched_matmul_weights[matrix * 12u + inner * 4u + column];
+                        }
+                        if (batched_matmul_output[output_index++] != expected) {
+                            fprintf(stderr, "batched MatMul differs from reference output\n");
+                            return 1;
+                        }
+                    }
+                }
+            }
+        }
+        print_values("batched_matmul", batched_matmul_output, 32u);
+    }
 
     for (index = 0u; index < 256u; ++index) {
         packed_matmul_input[index] = (float)((int32_t)((index * 11u) % 29u) - 14) / 13.0f;

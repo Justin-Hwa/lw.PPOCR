@@ -32,7 +32,7 @@ void lw_avx2_binary_contiguous_f32(
                                           _mm256_loadu_ps(right + (size_t)index));
             _mm256_storeu_ps(output + (size_t)index, result);
         }
-    } else {
+    } else if (operation == LW_SCALAR_BINARY_DIV) {
         for (; index + 8u <= element_count; index += 8u) {
             __m256 result = _mm256_div_ps(_mm256_loadu_ps(left + (size_t)index),
                                           _mm256_loadu_ps(right + (size_t)index));
@@ -66,7 +66,7 @@ void lw_avx2_binary_right_scalar_f32(
             __m256 result = _mm256_mul_ps(_mm256_loadu_ps(left + (size_t)index), right_values);
             _mm256_storeu_ps(output + (size_t)index, result);
         }
-    } else {
+    } else if (operation == LW_SCALAR_BINARY_DIV) {
         for (; index + 8u <= element_count; index += 8u) {
             __m256 result = _mm256_div_ps(_mm256_loadu_ps(left + (size_t)index), right_values);
             _mm256_storeu_ps(output + (size_t)index, result);

@@ -58,9 +58,11 @@ int main(void) {
     float flat_output[10];
     float flat_dispatched_output[10];
     float flat_simd_output[10];
+    float pow_input[10];
     float trailing_left[20];
     float trailing_output[20];
     float activation_output[9];
+    float sqrt_input[9];
     float erf_dense_input[ERF_DENSE_COUNT];
     float erf_dense_output[ERF_DENSE_COUNT];
     float gelu_reference[ERF_DENSE_COUNT];
@@ -77,6 +79,12 @@ int main(void) {
     }
     for (index = 0u; index < 20u; ++index) {
         trailing_left[index] = (float)((int32_t)((index * 11u) % 23u) - 11) / 4.0f;
+    }
+    for (index = 0u; index < 10u; ++index) {
+        pow_input[index] = fabsf(flat_left[index]) + 0.5f;
+    }
+    for (index = 0u; index < 9u; ++index) {
+        sqrt_input[index] = fabsf(activation_input[index]) + 1.0f;
     }
 
     status = lw_scalar_binary_f32(LW_SCALAR_BINARY_ADD, left, 3u, left_dimensions, add_right, 2u,
@@ -170,6 +178,48 @@ int main(void) {
         print_values(scalar_names[index], flat_output, 10u);
     }
 
+    lw_scalar_binary_contiguous_f32(LW_SCALAR_BINARY_SUB, flat_left, flat_right, flat_output,
+                                    10u);
+    print_values("flat_sub", flat_output, 10u);
+    lw_scalar_binary_right_scalar_f32(LW_SCALAR_BINARY_POW, pow_input, 2.0f, flat_output, 10u);
+    print_values("flat_pow", flat_output, 10u);
+    if (lw_simd_level_is_sse2(simd_level)) {
+        lw_scalar_binary_contiguous_f32(LW_SCALAR_BINARY_SUB, flat_left, flat_right,
+                                        flat_dispatched_output, 10u);
+        lw_sse2_binary_contiguous_f32(LW_SCALAR_BINARY_SUB, flat_left, flat_right,
+                                       flat_simd_output, 10u);
+        if (memcmp(flat_dispatched_output, flat_simd_output, sizeof(flat_output)) != 0) {
+            fprintf(stderr, "SSE2 Sub scalar fallback differs\n");
+            return 1;
+        }
+        lw_scalar_binary_right_scalar_f32(LW_SCALAR_BINARY_POW, pow_input, 2.0f,
+                                          flat_dispatched_output, 10u);
+        lw_sse2_binary_right_scalar_f32(LW_SCALAR_BINARY_POW, pow_input, 2.0f,
+                                        flat_simd_output, 10u);
+        if (memcmp(flat_dispatched_output, flat_simd_output, sizeof(flat_output)) != 0) {
+            fprintf(stderr, "SSE2 Pow scalar fallback differs\n");
+            return 1;
+        }
+    }
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_scalar_binary_contiguous_f32(LW_SCALAR_BINARY_SUB, flat_left, flat_right,
+                                        flat_dispatched_output, 10u);
+        lw_avx2_binary_contiguous_f32(LW_SCALAR_BINARY_SUB, flat_left, flat_right,
+                                       flat_simd_output, 10u);
+        if (memcmp(flat_dispatched_output, flat_simd_output, sizeof(flat_output)) != 0) {
+            fprintf(stderr, "AVX2 Sub scalar fallback differs\n");
+            return 1;
+        }
+        lw_scalar_binary_right_scalar_f32(LW_SCALAR_BINARY_POW, pow_input, 2.0f,
+                                          flat_dispatched_output, 10u);
+        lw_avx2_binary_right_scalar_f32(LW_SCALAR_BINARY_POW, pow_input, 2.0f,
+                                        flat_simd_output, 10u);
+        if (memcmp(flat_dispatched_output, flat_simd_output, sizeof(flat_output)) != 0) {
+            fprintf(stderr, "AVX2 Pow scalar fallback differs\n");
+            return 1;
+        }
+    }
+
     status = lw_scalar_relu_f32(activation_input, activation_output, 9u);
     if (!expect_status("relu", status, LW_STATUS_OK)) {
         return 1;
@@ -245,6 +295,12 @@ int main(void) {
         return 1;
     }
     print_values("sigmoid", activation_output, 9u);
+
+    status = lw_scalar_sqrt_f32(sqrt_input, activation_output, 9u);
+    if (!expect_status("sqrt", status, LW_STATUS_OK)) {
+        return 1;
+    }
+    print_values("sqrt", activation_output, 9u);
 
     status = lw_scalar_softmax_f32(softmax_input, softmax_output, 3u, softmax_dimensions, 1);
     if (!expect_status("softmax", status, LW_STATUS_OK)) {

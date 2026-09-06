@@ -4,6 +4,7 @@
 #include "cpu_features.h"
 #include "simd_kernels.h"
 
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -40,9 +41,17 @@ void lw_scalar_binary_contiguous_f32(lw_scalar_binary_op operation, const float*
         for (index = 0u; index < element_count; ++index) {
             output[(size_t)index] = left[(size_t)index] * right[(size_t)index];
         }
-    } else {
+    } else if (operation == LW_SCALAR_BINARY_DIV) {
         for (index = 0u; index < element_count; ++index) {
             output[(size_t)index] = left[(size_t)index] / right[(size_t)index];
+        }
+    } else if (operation == LW_SCALAR_BINARY_SUB) {
+        for (index = 0u; index < element_count; ++index) {
+            output[(size_t)index] = left[(size_t)index] - right[(size_t)index];
+        }
+    } else {
+        for (index = 0u; index < element_count; ++index) {
+            output[(size_t)index] = powf(left[(size_t)index], right[(size_t)index]);
         }
     }
 }
@@ -58,9 +67,17 @@ void lw_scalar_binary_right_scalar_f32(lw_scalar_binary_op operation, const floa
         for (index = 0u; index < element_count; ++index) {
             output[(size_t)index] = left[(size_t)index] * right;
         }
-    } else {
+    } else if (operation == LW_SCALAR_BINARY_DIV) {
         for (index = 0u; index < element_count; ++index) {
             output[(size_t)index] = left[(size_t)index] / right;
+        }
+    } else if (operation == LW_SCALAR_BINARY_SUB) {
+        for (index = 0u; index < element_count; ++index) {
+            output[(size_t)index] = left[(size_t)index] - right;
+        }
+    } else {
+        for (index = 0u; index < element_count; ++index) {
+            output[(size_t)index] = powf(left[(size_t)index], right);
         }
     }
 }
@@ -69,7 +86,10 @@ static void dispatch_binary_contiguous_for_level_f32(lw_scalar_binary_op operati
                                                      const float* left, const float* right,
                                                      float* output, uint64_t element_count,
                                                      lw_simd_level simd_level) {
-    if (lw_simd_level_is_avx2(simd_level)) {
+    if (operation != LW_SCALAR_BINARY_ADD && operation != LW_SCALAR_BINARY_MUL &&
+        operation != LW_SCALAR_BINARY_DIV) {
+        lw_scalar_binary_contiguous_f32(operation, left, right, output, element_count);
+    } else if (lw_simd_level_is_avx2(simd_level)) {
         lw_avx2_binary_contiguous_f32(operation, left, right, output, element_count);
     } else if (lw_simd_level_is_sse2(simd_level)) {
         lw_sse2_binary_contiguous_f32(operation, left, right, output, element_count);
@@ -89,7 +109,10 @@ static void dispatch_binary_right_scalar_for_level_f32(lw_scalar_binary_op opera
                                                        const float* left, float right,
                                                        float* output, uint64_t element_count,
                                                        lw_simd_level simd_level) {
-    if (lw_simd_level_is_avx2(simd_level)) {
+    if (operation != LW_SCALAR_BINARY_ADD && operation != LW_SCALAR_BINARY_MUL &&
+        operation != LW_SCALAR_BINARY_DIV) {
+        lw_scalar_binary_right_scalar_f32(operation, left, right, output, element_count);
+    } else if (lw_simd_level_is_avx2(simd_level)) {
         lw_avx2_binary_right_scalar_f32(operation, left, right, output, element_count);
     } else if (lw_simd_level_is_sse2(simd_level)) {
         lw_sse2_binary_right_scalar_f32(operation, left, right, output, element_count);
@@ -174,7 +197,8 @@ lw_status lw_scalar_binary_f32(lw_scalar_binary_op operation, const float* left,
     lw_status status;
 
     if (operation != LW_SCALAR_BINARY_ADD && operation != LW_SCALAR_BINARY_MUL &&
-        operation != LW_SCALAR_BINARY_DIV) {
+        operation != LW_SCALAR_BINARY_DIV && operation != LW_SCALAR_BINARY_SUB &&
+        operation != LW_SCALAR_BINARY_POW) {
         return LW_STATUS_INVALID_ARGUMENT;
     }
     if (left == NULL || right == NULL || output == NULL || output == left || output == right) {

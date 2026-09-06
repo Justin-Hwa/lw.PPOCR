@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Convert the bundled PP-OCRv6 tiny recognition model to LWM v0.1."""
+"""Convert a PP-OCR recognition model through the shared LWM entry point.
+
+The converter accepts an explicit ONNX path so model variants can share one
+validation and lowering path. The current lowering policy still validates the
+bundled Tiny asset until Small graph support is completed.
+"""
 
 from __future__ import annotations
 
