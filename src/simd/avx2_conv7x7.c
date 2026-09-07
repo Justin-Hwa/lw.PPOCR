@@ -194,3 +194,152 @@ void lw_avx2_conv5x5_unit_pad2_f32(const float* input, const float* weights,
                          (const int32_t[4]){2, 2, 2, 2}, 1u);
 #endif
 }
+
+#if LW_COMPILES_AVX2_CONV7X7 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+static void lw_avx2_conv_axis_f32(const float* input, const float* weights, const float* bias,
+                                  float* output, const int32_t input_dimensions[4],
+                                  const int32_t output_dimensions[4], uint32_t vertical) {
+#if LW_COMPILES_AVX2_CONV7X7
+    const uint32_t input_channels = (uint32_t)input_dimensions[1];
+    const uint32_t height = (uint32_t)input_dimensions[2];
+    const uint32_t width = (uint32_t)input_dimensions[3];
+    const uint32_t output_channels = (uint32_t)output_dimensions[1];
+    const uint64_t channel_plane = (uint64_t)height * width;
+    const uint64_t weights_per_output = (uint64_t)input_channels * 7u;
+    uint32_t batch;
+
+    for (batch = 0u; batch < (uint32_t)input_dimensions[0]; ++batch) {
+        const float* batch_input =
+            input + (size_t)((uint64_t)batch * input_channels * channel_plane);
+        float* batch_output =
+            output + (size_t)((uint64_t)batch * output_channels * channel_plane);
+        uint32_t output_channel;
+        for (output_channel = 0u; output_channel < output_channels; ++output_channel) {
+            const float* output_weights =
+                weights + (size_t)((uint64_t)output_channel * weights_per_output);
+            float* output_channel_data =
+                batch_output + (size_t)((uint64_t)output_channel * channel_plane);
+            const float initial = bias == NULL ? 0.0f : bias[output_channel];
+            const __m256 initial_values = _mm256_set1_ps(initial);
+            uint64_t spatial = 0u;
+            uint32_t input_channel;
+
+            for (; spatial + 8u <= channel_plane; spatial += 8u) {
+                _mm256_storeu_ps(output_channel_data + (size_t)spatial, initial_values);
+            }
+            for (; spatial < channel_plane; ++spatial) {
+                output_channel_data[(size_t)spatial] = initial;
+            }
+
+            for (input_channel = 0u; input_channel < input_channels; ++input_channel) {
+                const float* input_channel_data =
+                    batch_input + (size_t)((uint64_t)input_channel * channel_plane);
+                const float* channel_weights =
+                    output_weights + (size_t)((uint64_t)input_channel * 7u);
+                uint32_t kernel_index;
+                for (kernel_index = 0u; kernel_index < 7u; ++kernel_index) {
+                    const float weight = channel_weights[kernel_index];
+                    const __m256 weight_values = _mm256_set1_ps(weight);
+                    uint32_t output_y;
+                    if (vertical != 0u) {
+                        const uint32_t output_y_begin =
+                            kernel_index < 3u ? 3u - kernel_index : 0u;
+                        const uint32_t output_y_end =
+                            kernel_index > 3u ? height - (kernel_index - 3u) : height;
+                        for (output_y = output_y_begin; output_y < output_y_end; ++output_y) {
+                            const uint32_t input_y = output_y + kernel_index - 3u;
+                            const float* input_row =
+                                input_channel_data + (size_t)((uint64_t)input_y * width);
+                            float* output_row =
+                                output_channel_data + (size_t)((uint64_t)output_y * width);
+                            uint32_t output_x = 0u;
+                            for (; output_x + 8u <= width; output_x += 8u) {
+                                const __m256 input_values = _mm256_loadu_ps(input_row + output_x);
+                                __m256 output_values = _mm256_loadu_ps(output_row + output_x);
+                                output_values = _mm256_add_ps(
+                                    output_values, _mm256_mul_ps(input_values, weight_values));
+                                _mm256_storeu_ps(output_row + output_x, output_values);
+                            }
+                            for (; output_x < width; ++output_x) {
+                                output_row[output_x] += input_row[output_x] * weight;
+                            }
+                        }
+                    } else {
+                        const uint32_t output_x_begin =
+                            kernel_index < 3u ? 3u - kernel_index : 0u;
+                        const uint32_t output_x_end =
+                            kernel_index > 3u ? width - (kernel_index - 3u) : width;
+                        for (output_y = 0u; output_y < height; ++output_y) {
+                            const float* input_row =
+                                input_channel_data + (size_t)((uint64_t)output_y * width);
+                            float* output_row =
+                                output_channel_data + (size_t)((uint64_t)output_y * width);
+                            uint32_t output_x = output_x_begin;
+                            for (; output_x + 8u <= output_x_end; output_x += 8u) {
+                                const uint32_t input_x = output_x + kernel_index - 3u;
+                                const __m256 input_values = _mm256_loadu_ps(input_row + input_x);
+                                __m256 output_values = _mm256_loadu_ps(output_row + output_x);
+                                output_values = _mm256_add_ps(
+                                    output_values, _mm256_mul_ps(input_values, weight_values));
+                                _mm256_storeu_ps(output_row + output_x, output_values);
+                            }
+                            for (; output_x < output_x_end; ++output_x) {
+                                const uint32_t input_x = output_x + kernel_index - 3u;
+                                output_row[output_x] += input_row[input_x] * weight;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+#else
+    (void)input;
+    (void)weights;
+    (void)bias;
+    (void)output;
+    (void)input_dimensions;
+    (void)output_dimensions;
+    (void)vertical;
+#endif
+}
+
+#if LW_COMPILES_AVX2_CONV7X7 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+void lw_avx2_conv7x1_unit_pad3_f32(const float* input, const float* weights,
+                                   const float* bias, float* output,
+                                   const int32_t input_dimensions[4],
+                                   const int32_t output_dimensions[4]) {
+#if LW_COMPILES_AVX2_CONV7X7
+    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 1u);
+#else
+    lw_scalar_conv2d_f32(input, weights, bias, (uint32_t)output_dimensions[1], output,
+                         input_dimensions, (const int32_t[4]){output_dimensions[1],
+                                                               input_dimensions[1], 7, 1},
+                         output_dimensions, (const int32_t[2]){7, 1},
+                         (const int32_t[2]){1, 1}, (const int32_t[2]){1, 1},
+                         (const int32_t[4]){3, 0, 3, 0}, 1u);
+#endif
+}
+
+#if LW_COMPILES_AVX2_CONV7X7 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+void lw_avx2_conv1x7_unit_pad3_f32(const float* input, const float* weights,
+                                   const float* bias, float* output,
+                                   const int32_t input_dimensions[4],
+                                   const int32_t output_dimensions[4]) {
+#if LW_COMPILES_AVX2_CONV7X7
+    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 0u);
+#else
+    lw_scalar_conv2d_f32(input, weights, bias, (uint32_t)output_dimensions[1], output,
+                         input_dimensions, (const int32_t[4]){output_dimensions[1],
+                                                               input_dimensions[1], 1, 7},
+                         output_dimensions, (const int32_t[2]){1, 7},
+                         (const int32_t[2]){1, 1}, (const int32_t[2]){1, 1},
+                         (const int32_t[4]){0, 3, 0, 3}, 1u);
+#endif
+}

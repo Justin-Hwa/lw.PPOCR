@@ -214,6 +214,7 @@ set(LW_PPOCR_C_SOURCES
     src/simd/avx2_convtranspose2x2.c
     src/simd/avx2_depthwise3x3.c
     src/simd/avx2_depthwise5x5.c
+    src/simd/avx2_depthwise9x9.c
     src/simd/avx2_erf.c
     src/simd/avx2_softmax.c
     src/simd/avx2_matmul.c
@@ -241,6 +242,7 @@ if(MSVC AND MSVC_C_ARCHITECTURE_ID MATCHES "^(x64|X86)$")
         src/simd/avx2_convtranspose2x2.c
         src/simd/avx2_depthwise3x3.c
         src/simd/avx2_depthwise5x5.c
+        src/simd/avx2_depthwise9x9.c
         src/simd/avx2_erf.c src/simd/avx2_matmul.c
         src/simd/avx2_packed_conv1x1.c APPEND PROPERTY
         COMPILE_OPTIONS /arch:AVX2 /fp:strict)

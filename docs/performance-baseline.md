@@ -445,3 +445,48 @@ profiles measured the following changes against a clean pre-change build:
 The full profile retained 16 lines and checksum `ededc8978c6a78ee` in every
 pair. These are local instrumented measurements rather than portable release
 latency promises; the direct kernel reference test is the correctness gate.
+
+## Medium DET depthwise 9x9 SIMD result
+
+The next Medium DET hotspot was depthwise `9x9`, stride-1, pad-4 Conv. The
+AVX2 path uses the same border-trimmed, eight-column streaming structure as the
+validated depthwise 5x5 kernel and preserves its kernel-tap accumulation order.
+ARM, WASM, and scalar hosts continue through the generic reference path.
+
+On the local Windows x64 AVX2 build, three repeated two-iteration Medium 960
+profiles measured the following changes against a clean pre-change build:
+
+| Metric | Previous path | AVX2 9x9 path | Change |
+|---|---:|---:|---:|
+| DET node 172 (`256x128x128 -> 256x128x128`) | 231.42 ms | 35.71 ms | -84.56% |
+| Complete Conv work, run 1 | 13522.73 ms | 13037.73 ms | -3.59% |
+| Complete Conv work, run 2 | 13576.96 ms | 13119.84 ms | -3.37% |
+| Complete Conv work, run 3 | 13614.30 ms | 13251.56 ms | -2.66% |
+
+All three pairs retained 16 lines and checksum `ededc8978c6a78ee`. These are
+local instrumented measurements rather than portable release latency promises;
+the direct kernel reference test remains the correctness gate.
+
+## Medium DET asymmetric 7x1/1x7 SIMD result
+
+The remaining high-cost Medium DET asymmetric family includes regular `7x1`
+and `1x7`, stride-1, same-size convolutions. The AVX2 implementation streams
+eight contiguous output columns, trims only the padded axis, preserves the
+scalar input-channel/kernel order, and disables FMA. ARM, WASM, and scalar
+hosts continue through the generic reference path.
+
+Across three repeated two-iteration Medium 960 profiles against a clean build
+with the 9x9 path but without the asymmetric path, the measured 4-worker
+averages were:
+
+| Metric | Previous path | AVX2 7x1/1x7 path | Change |
+|---|---:|---:|---:|
+| Complete OCR wall | 7989.52 ms | 7475.05 ms | -6.44% |
+| Complete Conv work | 19193.23 ms | 18486.98 ms | -3.68% |
+| DET node 247 (`32x128x128`, 7x1; 1-worker diagnostic) | 210.85 ms | 7.86 ms | -96.27% |
+| DET node 248 (`32x128x128`, 1x7; 1-worker diagnostic) | 101.95 ms | 12.55 ms | -87.69% |
+
+The 1-worker pairs were within measurement noise on complete wall time, while
+all 4-worker pairs improved. Every pair retained 16 lines and checksum
+`ededc8978c6a78ee`; the direct kernel reference test remains the correctness
+gate.

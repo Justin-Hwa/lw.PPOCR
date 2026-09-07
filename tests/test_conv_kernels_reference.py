@@ -99,6 +99,12 @@ def expected_results() -> dict[str, np.ndarray]:
     stride2x1_depthwise_input = fill_values(190, 23, 47, 23, 11.0).reshape(1, 2, 5, 19)
     unit_depthwise5x5_input = fill_values(228, 29, 53, 26, 13.0).reshape(1, 2, 6, 19)
     unit_depthwise5x5_weights = fill_values(50, 31, 47, 23, 12.0).reshape(2, 1, 5, 5)
+    unit_depthwise9x9_input = fill_values(380, 37, 67, 31, 17.0).reshape(1, 2, 10, 19)
+    unit_depthwise9x9_weights = fill_values(162, 41, 71, 33, 19.0).reshape(2, 1, 9, 9)
+    conv_axis_input = fill_values(342, 17, 43, 21, 11.0).reshape(1, 2, 9, 19)
+    conv7x1_weights = fill_values(56, 43, 79, 37, 17.0).reshape(4, 2, 7, 1)
+    conv1x7_weights = fill_values(56, 47, 83, 39, 19.0).reshape(4, 2, 1, 7)
+    conv_axis_bias = np.asarray([0.375, -0.625, 0.125, -0.875], dtype=np.float32)
     asymmetric_input = fill_values(6, 3, 11, 5, 4.0).reshape(1, 1, 2, 3)
     asymmetric_weights = fill_values(4, 5, 13, 6, 3.0).reshape(1, 1, 2, 2)
     pointwise_input = fill_values(80, 7, 19, 9, 5.0).reshape(2, 4, 2, 5)
@@ -179,6 +185,18 @@ def expected_results() -> dict[str, np.ndarray]:
         "unit_depthwise_conv5x5": conv2d_reference(
             unit_depthwise5x5_input, unit_depthwise5x5_weights, unit_depthwise_bias,
             (1, 1), (1, 1), (2, 2, 2, 2), 2,
+        ).ravel(),
+        "unit_depthwise_conv9x9": conv2d_reference(
+            unit_depthwise9x9_input, unit_depthwise9x9_weights, unit_depthwise_bias,
+            (1, 1), (1, 1), (4, 4, 4, 4), 2,
+        ).ravel(),
+        "conv7x1": conv2d_reference(
+            conv_axis_input, conv7x1_weights, conv_axis_bias,
+            (1, 1), (1, 1), (3, 0, 3, 0), 1,
+        ).ravel(),
+        "conv1x7": conv2d_reference(
+            conv_axis_input, conv1x7_weights, conv_axis_bias,
+            (1, 1), (1, 1), (0, 3, 0, 3), 1,
         ).ravel(),
         "asymmetric_conv": conv2d_reference(
             asymmetric_input, asymmetric_weights, None,

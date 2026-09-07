@@ -605,6 +605,45 @@ lw_status lw_scalar_conv2d_f32(const float* input, const float* weights, const f
         }
         return LW_STATUS_OK;
     }
+    if (groups == (uint32_t)input_dimensions[1] && output_dimensions[1] == input_dimensions[1] &&
+        weight_dimensions[1] == 1 && kernel[0] == 9 && kernel[1] == 9 && strides[0] == 1 &&
+        strides[1] == 1 && dilations[0] == 1 && dilations[1] == 1 && pads[0] == 4 && pads[1] == 4 &&
+        pads[2] == 4 && pads[3] == 4 && input_dimensions[2] >= 9 && input_dimensions[3] >= 9 &&
+        output_dimensions[2] == input_dimensions[2] && output_dimensions[3] == input_dimensions[3]) {
+        lw_simd_level simd_level = lw_detect_simd_level();
+        if (lw_simd_level_is_avx2(simd_level)) {
+            lw_avx2_depthwise_conv9x9_unit_pad4_f32(input, weights, bias, output, input_dimensions);
+        } else {
+            goto general_convolution;
+        }
+        return LW_STATUS_OK;
+    }
+    if (groups == 1u && kernel[0] == 7 && kernel[1] == 1 && strides[0] == 1 && strides[1] == 1 &&
+        dilations[0] == 1 && dilations[1] == 1 && pads[0] == 3 && pads[1] == 0 && pads[2] == 3 &&
+        pads[3] == 0 && input_dimensions[2] >= 7 && output_dimensions[2] == input_dimensions[2] &&
+        output_dimensions[3] == input_dimensions[3]) {
+        lw_simd_level simd_level = lw_detect_simd_level();
+        if (lw_simd_level_is_avx2(simd_level)) {
+            lw_avx2_conv7x1_unit_pad3_f32(input, weights, bias, output, input_dimensions,
+                                          output_dimensions);
+        } else {
+            goto general_convolution;
+        }
+        return LW_STATUS_OK;
+    }
+    if (groups == 1u && kernel[0] == 1 && kernel[1] == 7 && strides[0] == 1 && strides[1] == 1 &&
+        dilations[0] == 1 && dilations[1] == 1 && pads[0] == 0 && pads[1] == 3 && pads[2] == 0 &&
+        pads[3] == 3 && input_dimensions[3] >= 7 && output_dimensions[2] == input_dimensions[2] &&
+        output_dimensions[3] == input_dimensions[3]) {
+        lw_simd_level simd_level = lw_detect_simd_level();
+        if (lw_simd_level_is_avx2(simd_level)) {
+            lw_avx2_conv1x7_unit_pad3_f32(input, weights, bias, output, input_dimensions,
+                                          output_dimensions);
+        } else {
+            goto general_convolution;
+        }
+        return LW_STATUS_OK;
+    }
     if (groups == 1u && kernel[0] == 3 && kernel[1] == 3 && strides[0] == 1 && strides[1] == 1 &&
         dilations[0] == 1 && dilations[1] == 1 && pads[0] == 1 && pads[1] == 1 && pads[2] == 1 &&
         pads[3] == 1 && output_dimensions[2] == input_dimensions[2] &&
