@@ -381,9 +381,11 @@ The exact 960 profile was replayed three times after the change. The positive
 regular-7x7 nodes totalled about 25.4 ms per profile run, versus approximately
 166.8 ms in the preceding instrumented baseline. The full OCR output checksum
 remained `ededc8978c6a78ee` and the line count remained 16. This is an
-instrumented hotspot result, not a portable end-to-end latency promise; the next
-candidate is regular 5x5, followed by 9x9 depthwise only if its full-OCR A/B
-measurement justifies another specialized path.
+instrumented hotspot result, not a portable end-to-end latency promise. The
+regular 5x5 candidate was then implemented and retained after three repeated
+full-OCR A/B pairs; it reduced the dominant node by about 87% and preserved
+the full-OCR checksum. The next candidate is 9x9 depthwise, subject to the
+same full-OCR A/B gate.
 
 The direct kernel and dispatch path are covered by `conv_kernel_reference`, and
 the complete result is covered by `full_ocr_pipeline_reference`.

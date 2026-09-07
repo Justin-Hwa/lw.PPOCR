@@ -640,6 +640,21 @@ lw_status lw_scalar_conv2d_f32(const float* input, const float* weights, const f
         }
         return LW_STATUS_OK;
     }
+    if (groups == 1u && kernel[0] == 5 && kernel[1] == 5 && strides[0] == 1 && strides[1] == 1 &&
+        dilations[0] == 1 && dilations[1] == 1 && pads[0] == 2 && pads[1] == 2 && pads[2] == 2 &&
+        pads[3] == 2 && input_dimensions[2] >= 5 && input_dimensions[3] >= 5 &&
+        output_dimensions[2] == input_dimensions[2] &&
+        output_dimensions[3] == input_dimensions[3]) {
+        lw_simd_level simd_level = lw_detect_simd_level();
+        if (lw_simd_level_is_avx2(simd_level)) {
+            lw_avx2_conv5x5_unit_pad2_f32(input, weights, bias, output, input_dimensions,
+                                           output_dimensions);
+        } else {
+            /* Keep the generic reference path for ARM, WASM, and scalar hosts. */
+            goto general_convolution;
+        }
+        return LW_STATUS_OK;
+    }
     if (groups == 1u && kernel[0] == 2 && kernel[1] == 2 && strides[0] == 1 && strides[1] == 1 &&
         dilations[0] == 1 && dilations[1] == 1 && pads[0] == 0 && pads[1] == 0 && pads[2] == 1 &&
         pads[3] == 1 && output_dimensions[2] == input_dimensions[2] &&

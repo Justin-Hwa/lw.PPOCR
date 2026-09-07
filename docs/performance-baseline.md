@@ -422,4 +422,26 @@ Across the positive regular-7x7 nodes, the three-run instrumented average fell
 from approximately 166.8 ms to 25.4 ms on the local Windows x64 host. The full
 OCR checksum stayed `ededc8978c6a78ee` with 16 lines. Because this is node-level
 instrumentation, it is a hotspot checkpoint rather than a release latency claim;
-the next A/B candidate is Medium DET regular 5x5.
+the subsequent Medium DET regular 5x5 A/B result is documented below.
+
+## Medium DET regular 5x5 SIMD result
+
+The next Medium DET hotspot was regular `5x5`, stride-1, pad-2 Conv. The AVX2
+implementation follows the validated 7x7 path: it streams eight contiguous
+output columns, trims the border once per kernel tap, preserves the input-
+channel/kernel accumulation order, and disables FMA. ARM, WASM, and unsupported
+geometries continue through the generic reference path.
+
+On the local Windows x64 AVX2 build, three repeated two-iteration Medium 960
+profiles measured the following changes against a clean pre-change build:
+
+| Metric | Previous path | AVX2 5x5 path | Change |
+|---|---:|---:|---:|
+| DET node 251 (`32x128x128 -> 32x128x128`) | 645.56 ms | 84.38 ms | -86.93% |
+| Complete Conv work, run 1 | 17227.27 ms | 16657.79 ms | -3.31% |
+| Complete Conv work, run 2 | 20991.92 ms | 20713.70 ms | -1.33% |
+| Complete Conv work, run 3 | 19107.09 ms | 17596.13 ms | -7.91% |
+
+The full profile retained 16 lines and checksum `ededc8978c6a78ee` in every
+pair. These are local instrumented measurements rather than portable release
+latency promises; the direct kernel reference test is the correctness gate.

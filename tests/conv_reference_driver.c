@@ -98,6 +98,62 @@ static void reference_conv7x7(const float* input, const float* weights, const fl
     }
 }
 
+static void reference_conv5x5(const float* input, const float* weights, const float* bias,
+                              float* output, const int32_t input_dimensions[4],
+                              const int32_t output_dimensions[4]) {
+    const uint32_t input_channels = (uint32_t)input_dimensions[1];
+    const uint32_t input_height = (uint32_t)input_dimensions[2];
+    const uint32_t input_width = (uint32_t)input_dimensions[3];
+    const uint32_t output_channels = (uint32_t)output_dimensions[1];
+    const uint32_t output_height = (uint32_t)output_dimensions[2];
+    const uint32_t output_width = (uint32_t)output_dimensions[3];
+    const uint64_t input_plane = (uint64_t)input_height * input_width;
+    const uint64_t output_plane = (uint64_t)output_height * output_width;
+    const uint64_t weights_per_output = (uint64_t)input_channels * 25u;
+    uint32_t batch;
+    for (batch = 0u; batch < (uint32_t)input_dimensions[0]; ++batch) {
+        uint32_t output_channel;
+        for (output_channel = 0u; output_channel < output_channels; ++output_channel) {
+            const float* output_weights =
+                weights + (size_t)((uint64_t)output_channel * weights_per_output);
+            float* output_data = output +
+                                 (size_t)(((uint64_t)batch * output_channels + output_channel) *
+                                          output_plane);
+            uint32_t output_y;
+            for (output_y = 0u; output_y < output_height; ++output_y) {
+                uint32_t output_x;
+                for (output_x = 0u; output_x < output_width; ++output_x) {
+                    float value = bias == NULL ? 0.0f : bias[output_channel];
+                    uint32_t input_channel;
+                    for (input_channel = 0u; input_channel < input_channels; ++input_channel) {
+                        const float* input_data =
+                            input + (size_t)(((uint64_t)batch * input_channels + input_channel) *
+                                             input_plane);
+                        const float* input_weights =
+                            output_weights + (size_t)((uint64_t)input_channel * 25u);
+                        uint32_t kernel_y;
+                        for (kernel_y = 0u; kernel_y < 5u; ++kernel_y) {
+                            const int32_t input_y = (int32_t)output_y + (int32_t)kernel_y - 2;
+                            uint32_t kernel_x;
+                            if (input_y < 0 || input_y >= (int32_t)input_height) continue;
+                            for (kernel_x = 0u; kernel_x < 5u; ++kernel_x) {
+                                const int32_t input_x =
+                                    (int32_t)output_x + (int32_t)kernel_x - 2;
+                                if (input_x >= 0 && input_x < (int32_t)input_width) {
+                                    value += input_data[(size_t)((uint32_t)input_y * input_width +
+                                                                 (uint32_t)input_x)] *
+                                             input_weights[kernel_y * 5u + kernel_x];
+                                }
+                            }
+                        }
+                    }
+                    output_data[(size_t)output_y * output_width + output_x] = value;
+                }
+            }
+        }
+    }
+}
+
 int main(void) {
     const int32_t normal_input_dimensions[4] = {2, 2, 4, 5};
     const int32_t normal_weight_dimensions[4] = {3, 2, 3, 3};
@@ -119,6 +175,9 @@ int main(void) {
     const int32_t conv7x7_output_dimensions[4] = {1, 4, 9, 19};
     const int32_t conv7x7_kernel[2] = {7, 7};
     const int32_t conv7x7_pads[4] = {3, 3, 3, 3};
+    const int32_t conv5x5_weight_dimensions[4] = {4, 2, 5, 5};
+    const int32_t conv5x5_kernel[2] = {5, 5};
+    const int32_t conv5x5_pads[4] = {2, 2, 2, 2};
     const int32_t unit_conv2x2_pads[4] = {0, 0, 1, 1};
     const int32_t invalid_output_dimensions[4] = {2, 3, 2, 2};
     const int32_t normal_kernel[2] = {3, 3};
@@ -214,6 +273,11 @@ int main(void) {
     float conv7x7_output[684];
     float conv7x7_simd_output[684];
     float conv7x7_dispatched_output[684];
+    float conv5x5_input[342];
+    float conv5x5_weights[200];
+    float conv5x5_output[684];
+    float conv5x5_simd_output[684];
+    float conv5x5_dispatched_output[684];
     float grouped_input[64];
     float grouped_weights[108];
     float grouped_output[96];
@@ -387,6 +451,29 @@ int main(void) {
     if (!expect_status("7x7 unit-stride conv", status, LW_STATUS_OK) ||
         memcmp(conv7x7_output, conv7x7_dispatched_output, sizeof(conv7x7_output)) != 0) {
         fprintf(stderr, "dispatched 7x7 Conv differs from scalar output\n");
+        return 1;
+    }
+
+    fill_values(conv5x5_input, 342u, 17u, 43u, 21, 11.0f);
+    fill_values(conv5x5_weights, 200u, 19u, 37u, 18, 9.0f);
+    reference_conv5x5(conv5x5_input, conv5x5_weights, conv7x7_bias, conv5x5_output,
+                     conv7x7_input_dimensions, conv7x7_output_dimensions);
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_avx2_conv5x5_unit_pad2_f32(conv5x5_input, conv5x5_weights, conv7x7_bias,
+                                      conv5x5_simd_output, conv7x7_input_dimensions,
+                                      conv7x7_output_dimensions);
+        if (memcmp(conv5x5_output, conv5x5_simd_output, sizeof(conv5x5_output)) != 0) {
+            fprintf(stderr, "AVX2 5x5 unit-stride Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    status = lw_scalar_conv2d_f32(
+        conv5x5_input, conv5x5_weights, conv7x7_bias, 4u, conv5x5_dispatched_output,
+        conv7x7_input_dimensions, conv5x5_weight_dimensions, conv7x7_output_dimensions,
+        conv5x5_kernel, unit_strides, unit_dilations, conv5x5_pads, 1u);
+    if (!expect_status("5x5 unit-stride conv", status, LW_STATUS_OK) ||
+        memcmp(conv5x5_output, conv5x5_dispatched_output, sizeof(conv5x5_output)) != 0) {
+        fprintf(stderr, "dispatched 5x5 Conv differs from scalar output\n");
         return 1;
     }
 
