@@ -21,30 +21,38 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 DEFAULT_TEXTS: tuple[tuple[str, str], ...] = (
-    ("mixed-cn-en", "纯托管推理引擎不依赖 native library 并且支持多个动态输入尺寸"),
-    ("long-line", "这是一段明显较长的中文文本用于测试动态识别宽度和压缩行为"),
-    ("english", "OpenVINO and pure managed CSharp performance comparison 2026"),
-    ("english", "The quick brown fox jumps over the lazy dog while OCR reads every word"),
-    ("identifier", "Invoice number 20260830 amount 128.50 date 2026-08-30 validation text"),
-    ("identifier", "PPOCRSharp dynamic recognition benchmark with variable width input"),
-    ("mixed-cn-en", "检测后处理与文字方向分类应该保持和 PaddleOCR 官方结果一致"),
-    ("mixed-cn-en", "这是用于性能基准的更长文本行包含中文 English 以及数字 1234567890"),
-    ("short-cn", "文本识别结果"),
-    ("short-cn", "边界框与旋转"),
-    ("short-cn", "可重复性测试"),
+    ("project", "lw.PPOCR.C 轻量级 C OCR 推理运行时"),
+    ("project", "PP-OCRv6 Tiny Small Medium 模型验证"),
+    ("long-line", "这是一段较长的项目文本用于测试 REC 自适应宽度和动态识别"),
+    ("long-line", "单文件离线 HTML 支持图片 PDF 和 OCR 结果导出 JSON TXT"),
+    ("mixed-cn-en", "DET CLS REC 三阶段流水线保持 UTF-8 文本和阅读顺序一致"),
+    ("mixed-cn-en", "WASM Web SDK 与 C ABI 共用同一套 LWM v0.1 模型资产"),
+    ("mixed-cn-en", "Android Java JNI Demo 支持 ARM64 图片 OCR 和本地模型缓存"),
+    ("mixed-cn-en", "CSharp WinForms HTTP Server 与 Web Demo 使用统一 OCR 结果"),
+    ("english", "lw.PPOCR.C full OCR regression and model contract validation"),
+    ("english", "Standalone WASM HTML keeps OCR processing fully offline"),
+    ("english", "Adaptive REC target width 192 320 480 640 960"),
+    ("english", "AVX2 NEON LSX LASX and wasm128 SIMD backend"),
+    ("identifier", "LWM-0.1 schema_version=1 wasmHostAbiVersion=1"),
+    ("identifier", "det.lwm cls.lwm rec.lwm PP-OCRv6_small_rec_dict.txt"),
+    ("identifier", "ARM64 LoongArch64 amd64 customer package"),
+    ("identifier", "ocr-demo.html result.json result.txt 2026-09-07"),
+    ("short-cn", "识别结果导出"),
+    ("short-cn", "检测框与置信度"),
+    ("short-cn", "阅读顺序测试"),
     ("short-cn", "方向分类 180 度"),
-    ("identifier", "OpenVINO dynamic width"),
-    ("identifier", "Dynamic shape session"),
-    ("identifier", "Batch size eight"),
-    ("mixed-cn-en", "纯托管 C# 推理"),
+    ("short-cn", "PDF 页面 OCR"),
+    ("short-cn", "模型缓存校验"),
 )
 
 ASCII_FALLBACK_TEXTS: tuple[tuple[str, str], ...] = (
-    ("english", "OCR deterministic dataset"),
-    ("english", "OpenVINO dynamic width"),
-    ("identifier", "Invoice 20260830 amount 128.50"),
-    ("identifier", "Batch size eight"),
-    ("identifier", "PPOCR validation 1234567890"),
+    ("project", "lw.PPOCR.C OCR runtime"),
+    ("project", "PP-OCRv6 Tiny Small Medium"),
+    ("english", "Standalone WASM OCR demo"),
+    ("english", "Adaptive REC width 960"),
+    ("identifier", "det.lwm cls.lwm rec.lwm"),
+    ("identifier", "LWM-0.1 ABI-1 JSON-1"),
+    ("identifier", "ARM64 LoongArch64 amd64"),
 )
 
 CANVAS_SIZES: tuple[tuple[int, int], ...] = (
@@ -56,7 +64,7 @@ CANVAS_SIZES: tuple[tuple[int, int], ...] = (
     (1664, 480),
     (1792, 1392),
 )
-FONT_SIZES: tuple[int, ...] = (14, 16, 18, 22, 26, 30, 36, 44, 52, 60)
+FONT_SIZES: tuple[int, ...] = (14, 16, 18, 22, 26, 30, 36, 44, 52)
 ORIENTATIONS: tuple[int, ...] = (0, 0, 0, 0, 180, 90, -90)
 
 
@@ -132,10 +140,17 @@ def render_text(
     return sprite, natural_width
 
 
-def fit_sprite(sprite: Image.Image, canvas: tuple[int, int], margin: int = 12) -> Image.Image:
+def fit_sprite(
+    sprite: Image.Image,
+    canvas: tuple[int, int],
+    margin: int = 12,
+    max_height: int | None = None,
+) -> Image.Image:
     max_width = max(1, canvas[0] - margin * 2)
-    max_height = max(1, canvas[1] - margin * 2)
-    scale = min(1.0, max_width / sprite.width, max_height / sprite.height)
+    height_limit = max(1, canvas[1] - margin * 2)
+    if max_height is not None:
+        height_limit = min(height_limit, max(1, max_height))
+    scale = min(1.0, max_width / sprite.width, height_limit / sprite.height)
     if scale >= 1.0:
         return sprite
     size = (max(1, int(sprite.width * scale)), max(1, int(sprite.height * scale)))
@@ -155,17 +170,33 @@ def place_sprite(
     canvas: tuple[int, int],
     sprite: Image.Image,
     occupied: list[tuple[int, int, int, int]],
-) -> tuple[int, int]:
+    gap: int = 4,
+) -> tuple[int, int] | None:
     width, height = canvas
     max_x = max(0, width - sprite.width)
     max_y = max(0, height - sprite.height)
-    for _ in range(120):
+    for _ in range(256):
         x = rng.randint(0, max_x)
         y = rng.randint(0, max_y)
-        candidate = (x, y, x + sprite.width, y + sprite.height)
-        if all(rect_intersection(candidate, previous) == 0 for previous in occupied):
+        guarded = (x - gap, y - gap, x + sprite.width + gap, y + sprite.height + gap)
+        if all(rect_intersection(guarded, previous) == 0 for previous in occupied):
             return x, y
-    return rng.randint(0, max_x), rng.randint(0, max_y)
+
+    # Random placement is quick for the common case. Scan a deterministic grid
+    # before giving up so a crowded image never falls back to overlapping text.
+    step = max(8, min(24, min(sprite.width, sprite.height) // 2))
+    x_positions = list(range(0, max_x + 1, step))
+    y_positions = list(range(0, max_y + 1, step))
+    if not x_positions or x_positions[-1] != max_x:
+        x_positions.append(max_x)
+    if not y_positions or y_positions[-1] != max_y:
+        y_positions.append(max_y)
+    for y in y_positions:
+        for x in x_positions:
+            guarded = (x - gap, y - gap, x + sprite.width + gap, y + sprite.height + gap)
+            if all(rect_intersection(guarded, previous) == 0 for previous in occupied):
+                return x, y
+    return None
 
 
 def generate_dataset(
@@ -199,7 +230,9 @@ def generate_dataset(
         base = Image.new("RGB", (width, height), background)
         occupied: list[tuple[int, int, int, int]] = []
         line_records: list[dict[str, object]] = []
-        line_count = rng.randint(6, 14)
+        line_count = rng.randint(4, 8)
+        placed_line_count = 0
+        pending = []
         for _ in range(line_count):
             category, text = rng.choice(pool)
             font_spec = rng.choice(specs)
@@ -213,10 +246,49 @@ def generate_dataset(
                 color = tuple(rng.randint(0, 80) for _ in range(3))
             font = load_font(font_spec, font_size)
             sprite, natural_width = render_text(text, font, orientation, angle, color)
-            sprite = fit_sprite(sprite, (width, height))
-            x, y = place_sprite(rng, (width, height), sprite, occupied)
+            sprite = fit_sprite(
+                sprite,
+                (width, height),
+                max_height=height // max(3, line_count),
+            )
+            pending.append(
+                (
+                    sprite,
+                    natural_width,
+                    category,
+                    text,
+                    font_spec,
+                    font_size,
+                    angle,
+                    orientation,
+                    color,
+                )
+            )
+
+        # Packing large blocks first leaves more usable space for the shorter
+        # lines and avoids the sparse images caused by greedy random order.
+        pending.sort(key=lambda item: item[0].width * item[0].height, reverse=True)
+        for (
+            sprite,
+            natural_width,
+            category,
+            text,
+            font_spec,
+            font_size,
+            angle,
+            orientation,
+            color,
+        ) in pending:
+            position = place_sprite(rng, (width, height), sprite, occupied)
+            if position is None:
+                # Keep the image useful and truthful rather than painting a
+                # line over an existing one when the requested density is too
+                # high for this canvas/font combination.
+                continue
+            x, y = position
             occupied.append((x, y, x + sprite.width, y + sprite.height))
             base.paste(sprite, (x, y), sprite)
+            placed_line_count += 1
             line_records.append(
                 {
                     "text": text,
@@ -242,6 +314,8 @@ def generate_dataset(
                 "width": width,
                 "height": height,
                 "background_rgb": list(background),
+                "requested_line_count": line_count,
+                "placed_line_count": placed_line_count,
                 "sha256": sha256_file(image_path),
                 "lines": line_records,
             }

@@ -21,7 +21,9 @@ class GenerateOcrDatasetTests(unittest.TestCase):
             for image in first_manifest["images"]:
                 width = int(image["width"])
                 height = int(image["height"])
-                for line in image["lines"]:
+                lines = image["lines"]
+                self.assertEqual(image["placed_line_count"], len(lines))
+                for line in lines:
                     x1, y1, x2, y2 = line["bbox"]
                     self.assertGreaterEqual(x1, 0)
                     self.assertGreaterEqual(y1, 0)
@@ -29,6 +31,14 @@ class GenerateOcrDatasetTests(unittest.TestCase):
                     self.assertLessEqual(y2, height)
                     self.assertLess(x1, x2)
                     self.assertLess(y1, y2)
+                for index, first in enumerate(lines):
+                    for second in lines[index + 1 :]:
+                        ax1, ay1, ax2, ay2 = first["bbox"]
+                        bx1, by1, bx2, by2 = second["bbox"]
+                        overlap = max(0, min(ax2, bx2) - max(ax1, bx1)) * max(
+                            0, min(ay2, by2) - max(ay1, by1)
+                        )
+                        self.assertEqual(overlap, 0)
 
     def test_generated_manifest_contains_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

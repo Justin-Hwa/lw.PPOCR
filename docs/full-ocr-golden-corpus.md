@@ -40,7 +40,12 @@ For repeatable model comparison, use the repository-owned generator instead of
 depending on an external evaluator or an external image corpus. The generator
 records the seed, Pillow version, font file names and SHA-256 values, image
 dimensions, image SHA-256 values, text categories, font settings, orientation,
-rotation, and bounded line boxes in `metadata.json`.
+rotation, and bounded non-overlapping line boxes in `metadata.json`. If a
+requested density does not fit a particular canvas, the generator records the
+requested and placed line counts instead of painting one text line over another.
+The default text pool is project-specific: it covers PP-OCRv6 model profiles,
+DET/CLS/REC, LWM and WASM, Android/Java and C ABI integration, SIMD backends,
+PDF handling, reading order, and TXT/JSON export.
 
 Generated images and reports belong under `build-local-data/`, which is ignored
 by Git. The generator, manifest schema, evaluator, and unit tests are tracked;
