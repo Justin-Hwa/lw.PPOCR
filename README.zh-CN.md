@@ -167,6 +167,8 @@ Tiny、Small、Medium 的 DET/REC，并由三个变体共用一个 Tiny CLS，Sm
 Medium 共用 `PP-OCRv6_small_rec_dict.txt`。Small、Medium 仍属于分析阶段；
 发布时会提供独立模型压缩包，用于可复现的转换和 profiling，不会改变默认
 运行时模型包。
+项目自有的生成式 OCR 测试语料，以及 Tiny/Small/Medium 对比步骤，见
+[`docs/full-ocr-golden-corpus.md`](docs/full-ocr-golden-corpus.md)。
 
 ### HTTP OCR 与 Web 页面
 

@@ -126,6 +126,8 @@ Small, and Medium DET/REC assets, with one shared Tiny CLS and one shared
 Small/Medium REC dictionary. Small and Medium remain analysis-only; the
 release model archive is intended for reproducible conversion and profiling,
 not the default runtime package.
+The project-owned generated OCR corpus and Tiny/Small/Medium comparison steps
+are documented in [`docs/full-ocr-golden-corpus.md`](docs/full-ocr-golden-corpus.md).
 
 ## Standalone browser OCR
 

@@ -86,7 +86,7 @@ python tools/evaluate_ocr_dataset.py \
   --dictionary models/ppocrv6-tiny/ppocr_keys.txt \
   --model-name ppocrv6-tiny \
   --rec-max-width 960 \
-  --output build-local-data/tiny-generated-ocr-960.json
+  --output build-local-data/tiny-generated-ocr-960-core-full.json
 ```
 
 For the Small profile, keep the shared Tiny CLS model and switch only DET,
@@ -102,7 +102,7 @@ python tools/evaluate_ocr_dataset.py \
   --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
   --model-name ppocrv6-small \
   --rec-max-width 960 \
-  --output build-local-data/small-generated-ocr-960.json
+  --output build-local-data/small-generated-ocr-960-core-full.json
 ```
 
 For the Medium profile, use the converted Medium DET/REC pair with the same
@@ -118,7 +118,7 @@ python tools/evaluate_ocr_dataset.py \
   --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
   --model-name ppocrv6-medium \
   --rec-max-width 960 \
-  --output build-local-data/medium-generated-ocr-960.json
+  --output build-local-data/medium-generated-ocr-960-core-full.json
 ```
 
 The three profiles therefore differ only in DET/REC capacity and dictionary
@@ -152,6 +152,18 @@ python tools/compare_ocr_dataset_reports.py \
 
 The comparison records candidate-minus-baseline deltas for the overall report
 and every category, orientation, and canvas group.
+
+For a compact multi-profile table, pass the reports to the summary tool. The
+first report is the baseline and every other report must use the same manifest,
+REC width, and IoU threshold:
+
+```bash
+python tools/summarize_ocr_dataset_reports.py \
+  --report Tiny=build-local-data/tiny-generated-ocr-960-core-full.json \
+  --report Small=build-local-data/small-generated-ocr-960-core-full.json \
+  --report Medium=build-local-data/medium-generated-ocr-960-core-full.json \
+  --output build-local-data/tiny-small-medium-summary.json
+```
 
 For example, compare Medium against both smaller profiles:
 
