@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -239,6 +240,38 @@ def finite_metric(value: float) -> float:
     return float(value) if math.isfinite(value) else 0.0
 
 
+def new_line_metric() -> dict[str, Any]:
+    return {
+        "ground_truth_lines": 0,
+        "matched_lines": 0,
+        "exact_lines": 0,
+        "iou_sum": 0.0,
+        "reference_characters_on_matches": 0,
+        "edit_distance_on_matches": 0,
+    }
+
+
+def summarize_line_metrics(raw: dict[str, Any]) -> dict[str, Any]:
+    ground_truth = int(raw["ground_truth_lines"])
+    matched = int(raw["matched_lines"])
+    exact = int(raw["exact_lines"])
+    characters = int(raw["reference_characters_on_matches"])
+    distance = int(raw["edit_distance_on_matches"])
+    return {
+        "ground_truth_lines": ground_truth,
+        "matched_lines": matched,
+        "missing_lines": ground_truth - matched,
+        "exact_lines": exact,
+        "detection_recall": matched / ground_truth if ground_truth else 0.0,
+        "mean_matched_iou": raw["iou_sum"] / matched if matched else 0.0,
+        "exact_reference_line_rate": exact / ground_truth if ground_truth else 0.0,
+        "matched_exact_line_rate": exact / matched if matched else 0.0,
+        "reference_characters_on_matches": characters,
+        "edit_distance_on_matches": distance,
+        "cer_on_matched_lines": distance / characters if characters else 0.0,
+    }
+
+
 def evaluate_image(
     image_path: Path,
     image_record: dict[str, Any],
@@ -294,6 +327,18 @@ def evaluate_image(
     reference_characters = 0
     distance = 0
     mismatch_details: list[dict[str, Any]] = []
+    line_results: list[dict[str, Any]] = [
+        {
+            "category": str(line.get("category", "uncategorized")),
+            "orientation_degrees": int(line.get("orientation_degrees", 0)),
+            "matched": False,
+            "exact": False,
+            "iou": 0.0,
+            "reference_characters": 0,
+            "edit_distance": 0,
+        }
+        for line in image_record["lines"]
+    ]
     for gt_index, prediction_index, iou in matches:
         expected = normalize_text(str(image_record["lines"][gt_index]["text"]))
         actual = predicted[prediction_index]["text"]
@@ -302,6 +347,15 @@ def evaluate_image(
         distance += line_distance
         exact = expected == actual
         exact_lines += int(exact)
+        line_results[gt_index].update(
+            {
+                "matched": True,
+                "exact": exact,
+                "iou": finite_metric(iou),
+                "reference_characters": len(expected),
+                "edit_distance": line_distance,
+            }
+        )
         if not exact:
             mismatch_details.append(
                 {
@@ -333,10 +387,11 @@ def evaluate_image(
         "edit_distance": distance,
         "cer_on_matched_lines": distance / reference_characters if reference_characters else 0.0,
         "mismatch_details": mismatch_details,
+        "line_results": line_results,
     }
 
 
-def aggregate(results: list[dict[str, Any]], total_gt_lines: int) -> dict[str, Any]:
+def aggregate_core(results: list[dict[str, Any]], total_gt_lines: int) -> dict[str, Any]:
     predicted = sum(item["predicted_lines"] for item in results)
     matched = sum(item["matched_lines"] for item in results)
     missing = sum(item["missing_lines"] for item in results)
@@ -365,6 +420,41 @@ def aggregate(results: list[dict[str, Any]], total_gt_lines: int) -> dict[str, A
         "edit_distance_on_matches": distance,
         "cer_on_matched_lines": distance / reference_characters if reference_characters else 0.0,
     }
+
+
+def aggregate_line_groups(
+    results: list[dict[str, Any]], field: str
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = defaultdict(new_line_metric)
+    for result in results:
+        for line in result["line_results"]:
+            key = str(line[field])
+            raw = grouped[key]
+            raw["ground_truth_lines"] += 1
+            if not line["matched"]:
+                continue
+            raw["matched_lines"] += 1
+            raw["iou_sum"] += float(line["iou"])
+            raw["reference_characters_on_matches"] += int(line["reference_characters"])
+            raw["edit_distance_on_matches"] += int(line["edit_distance"])
+            raw["exact_lines"] += int(line["exact"])
+    return {key: summarize_line_metrics(grouped[key]) for key in sorted(grouped)}
+
+
+def aggregate(results: list[dict[str, Any]], total_gt_lines: int) -> dict[str, Any]:
+    summary = aggregate_core(results, total_gt_lines)
+    canvas_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for result in results:
+        canvas_groups[f"{result['width']}x{result['height']}"].append(result)
+    summary["groups"] = {
+        "category": aggregate_line_groups(results, "category"),
+        "orientation_degrees": aggregate_line_groups(results, "orientation_degrees"),
+        "canvas": {
+            key: aggregate_core(items, sum(item["ground_truth_lines"] for item in items))
+            for key, items in sorted(canvas_groups.items())
+        },
+    }
+    return summary
 
 
 def main() -> int:

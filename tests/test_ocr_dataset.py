@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from tools.evaluate_ocr_dataset import (
+    aggregate,
     bbox_iou,
     clamp_bbox,
     edit_distance,
@@ -47,6 +48,50 @@ class OcrDatasetTests(unittest.TestCase):
         self.assertEqual(clamp_bbox([-1, 2, 12, 20], 10, 15), (0.0, 2.0, 10.0, 15.0))
         self.assertEqual(normalize_text("e\u0301\r\n"), "é\n")
         self.assertEqual(edit_distance("OCR", "OXR"), 1)
+
+    def test_grouped_metrics_are_partitioned_by_metadata(self) -> None:
+        summary = aggregate(
+            [
+                {
+                    "width": 640,
+                    "height": 480,
+                    "ground_truth_lines": 2,
+                    "predicted_lines": 2,
+                    "matched_lines": 1,
+                    "missing_lines": 1,
+                    "extra_lines": 1,
+                    "exact_lines": 1,
+                    "mean_matched_iou": 0.8,
+                    "reference_characters": 4,
+                    "edit_distance": 0,
+                    "line_results": [
+                        {
+                            "category": "project",
+                            "orientation_degrees": 0,
+                            "matched": True,
+                            "exact": True,
+                            "iou": 0.8,
+                            "reference_characters": 4,
+                            "edit_distance": 0,
+                        },
+                        {
+                            "category": "identifier",
+                            "orientation_degrees": 180,
+                            "matched": False,
+                            "exact": False,
+                            "iou": 0.0,
+                            "reference_characters": 0,
+                            "edit_distance": 0,
+                        },
+                    ],
+                }
+            ],
+            2,
+        )
+        self.assertEqual(summary["groups"]["category"]["project"]["exact_lines"], 1)
+        self.assertEqual(summary["groups"]["category"]["identifier"]["missing_lines"], 1)
+        self.assertEqual(summary["groups"]["orientation_degrees"]["180"]["matched_lines"], 0)
+        self.assertEqual(summary["groups"]["canvas"]["640x480"]["extra_lines"], 1)
 
     def test_project_manifest_requires_our_generator(self) -> None:
         from tools.evaluate_ocr_dataset import read_dataset

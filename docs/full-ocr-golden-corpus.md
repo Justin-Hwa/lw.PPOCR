@@ -43,6 +43,10 @@ dimensions, image SHA-256 values, text categories, font settings, orientation,
 rotation, and bounded non-overlapping line boxes in `metadata.json`. If a
 requested density does not fit a particular canvas, the generator records the
 requested and placed line counts instead of painting one text line over another.
+The manifest also includes a corpus identifier (`lw-ppocr-c-project-v1`) and
+orientation policy so a changed project text pool cannot silently reuse an
+older baseline. The default corpus uses only the orientations currently
+covered by the CLS contract: `0` and `180` degrees.
 The default text pool is project-specific: it covers PP-OCRv6 model profiles,
 DET/CLS/REC, LWM and WASM, Android/Java and C ABI integration, SIMD backends,
 PDF handling, reading order, and TXT/JSON export.
@@ -52,6 +56,11 @@ by Git. The generator, manifest schema, evaluator, and unit tests are tracked;
 the generated image files are not. This keeps CI and release packages small
 while allowing any developer to reproduce the same local dataset with the
 same seed, Pillow version, and fonts.
+
+Vertical `90/-90` degree text is intentionally an optional stress corpus rather
+than part of the core regression baseline. Generate it explicitly with
+`--include-vertical`; its manifest receives the separate
+`lw-ppocr-c-project-v1-vertical` identifier.
 
 Generate the default 100-image local corpus on Windows with CJK fonts:
 
@@ -99,6 +108,24 @@ The evaluator verifies image hashes and dimensions, converts JPEG input to
 temporary PPM, invokes the existing native driver, and matches predicted boxes
 to generated boxes by one-to-one greedy IoU. It reports detection
 precision/recall/F1, matched-box IoU, CER on matched lines, exact reference-line
-rate, missing lines, and extra lines. It is a local model-analysis tool, not a
-release gate. Generated images must not be added to Git; any future checked-in
-fixture still needs an independent provenance and redistribution review.
+rate, missing lines, and extra lines. The report also contains grouped metrics
+by text category, orientation, and canvas size; category/orientation groups
+report matched-line recall, IoU, Exact Line Rate, and CER, while canvas groups
+retain full detection precision and F1. It is a local model-analysis tool, not
+a release gate. Generated images must not be added to Git; any future
+checked-in fixture still needs an independent provenance and redistribution
+review.
+
+To compare two reports from the same generated corpus, use the project-owned
+report comparator. It refuses to compare different manifest hashes, seeds,
+REC widths, or IoU thresholds:
+
+```bash
+python tools/compare_ocr_dataset_reports.py \
+  --baseline build-local-data/tiny-generated-ocr-960-core-full.json \
+  --candidate build-local-data/small-generated-ocr-960-core-full.json \
+  --output build-local-data/tiny-vs-small-core.json
+```
+
+The comparison records candidate-minus-baseline deltas for the overall report
+and every category, orientation, and canvas group.

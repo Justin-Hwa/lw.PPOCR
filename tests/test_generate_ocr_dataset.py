@@ -48,8 +48,34 @@ class GenerateOcrDatasetTests(unittest.TestCase):
             self.assertEqual(manifest["version"], 1)
             self.assertEqual(manifest["seed"], 9)
             self.assertEqual(manifest["generator"]["name"], "lw.PPOCR.C")
+            self.assertEqual(manifest["generator"]["corpus_id"], "lw-ppocr-c-project-v1")
+            self.assertEqual(manifest["generator"]["orientation_policy"], "0/180")
             self.assertEqual(len(manifest["images"]), 1)
             self.assertTrue(manifest["images"][0]["sha256"])
+
+    def test_vertical_stress_corpus_is_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = generate_dataset(
+                Path(directory),
+                8,
+                11,
+                image_format="png",
+                text_pool=(("project", "lw.PPOCR.C"),),
+                include_vertical=True,
+            )
+            self.assertEqual(
+                manifest["generator"]["corpus_id"],
+                "lw-ppocr-c-project-v1-vertical",
+            )
+            self.assertEqual(
+                manifest["generator"]["orientation_policy"], "0/180/90/-90"
+            )
+            orientations = {
+                line["orientation_degrees"]
+                for image in manifest["images"]
+                for line in image["lines"]
+            }
+            self.assertTrue({90, -90}.intersection(orientations))
 
 
 if __name__ == "__main__":

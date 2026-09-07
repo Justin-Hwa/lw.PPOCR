@@ -65,7 +65,8 @@ CANVAS_SIZES: tuple[tuple[int, int], ...] = (
     (1792, 1392),
 )
 FONT_SIZES: tuple[int, ...] = (14, 16, 18, 22, 26, 30, 36, 44, 52)
-ORIENTATIONS: tuple[int, ...] = (0, 0, 0, 0, 180, 90, -90)
+CORE_ORIENTATIONS: tuple[int, ...] = (0, 0, 0, 0, 180, 180)
+VERTICAL_ORIENTATIONS: tuple[int, ...] = (90, -90)
 
 
 @dataclass(frozen=True)
@@ -207,6 +208,7 @@ def generate_dataset(
     image_format: str = "jpg",
     text_pool: Iterable[tuple[str, str]] = DEFAULT_TEXTS,
     force: bool = False,
+    include_vertical: bool = False,
 ) -> dict[str, object]:
     if count <= 0:
         raise ValueError("count must be positive")
@@ -223,6 +225,16 @@ def generate_dataset(
     if all(spec.path is None for spec in specs) and pool == DEFAULT_TEXTS:
         pool = ASCII_FALLBACK_TEXTS
     rng = random.Random(seed)
+    orientations = (
+        CORE_ORIENTATIONS + VERTICAL_ORIENTATIONS
+        if include_vertical
+        else CORE_ORIENTATIONS
+    )
+    corpus_id = (
+        "lw-ppocr-c-project-v1-vertical"
+        if include_vertical
+        else "lw-ppocr-c-project-v1"
+    )
     image_records: list[dict[str, object]] = []
     for image_index in range(1, count + 1):
         width, height = rng.choice(CANVAS_SIZES)
@@ -237,7 +249,7 @@ def generate_dataset(
             category, text = rng.choice(pool)
             font_spec = rng.choice(specs)
             font_size = rng.choice(FONT_SIZES)
-            orientation = rng.choice(ORIENTATIONS)
+            orientation = rng.choice(orientations)
             angle = round(rng.uniform(-15.0, 15.0), 3)
             brightness = sum(background) / 3.0
             if brightness < 128:
@@ -326,6 +338,8 @@ def generate_dataset(
         "generator": {
             "name": "lw.PPOCR.C",
             "tool": "tools/generate_ocr_dataset.py",
+            "corpus_id": corpus_id,
+            "orientation_policy": "0/180/90/-90" if include_vertical else "0/180",
             "renderer": "Pillow",
             "renderer_version": Image.__version__,
             "image_format": image_format,
@@ -350,6 +364,11 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20260907)
     parser.add_argument("--font", type=Path, action="append", default=[])
     parser.add_argument("--format", choices=("jpg", "png"), default="jpg")
+    parser.add_argument(
+        "--include-vertical",
+        action="store_true",
+        help="include 90/-90 degree vertical text as a separate stress corpus",
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     manifest = generate_dataset(
@@ -359,6 +378,7 @@ def main() -> int:
         args.font,
         args.format,
         force=args.force,
+        include_vertical=args.include_vertical,
     )
     print(
         json.dumps(
