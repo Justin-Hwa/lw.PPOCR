@@ -33,3 +33,67 @@ redistributable source image. It is not a general OCR accuracy benchmark.
 Future additions should prefer independently sourced redistributable images,
 record their hashes, and review changed expectations separately from runtime
 optimizations.
+
+## Project-owned generated datasets
+
+For repeatable model comparison, use the repository-owned generator instead of
+depending on an external evaluator or an external image corpus. The generator
+records the seed, Pillow version, font file names and SHA-256 values, image
+dimensions, image SHA-256 values, text categories, font settings, orientation,
+rotation, and bounded line boxes in `metadata.json`.
+
+Generated images and reports belong under `build-local-data/`, which is ignored
+by Git. The generator, manifest schema, evaluator, and unit tests are tracked;
+the generated image files are not. This keeps CI and release packages small
+while allowing any developer to reproduce the same local dataset with the
+same seed, Pillow version, and fonts.
+
+Generate the default 100-image local corpus on Windows with CJK fonts:
+
+```bash
+python tools/generate_ocr_dataset.py \
+  --output build-local-data/lw-generated-ocr \
+  --count 100 \
+  --seed 20260907 \
+  --font C:/Windows/Fonts/msyh.ttc \
+  --font C:/Windows/Fonts/simsun.ttc
+```
+
+Evaluate that local corpus with the project-native OCR driver:
+
+```bash
+python tools/evaluate_ocr_dataset.py \
+  --dataset build-local-data/lw-generated-ocr \
+  --driver build/Release/lw-ocr-ppm.exe \
+  --detector build/models/det.lwm \
+  --classifier build/models/cls.lwm \
+  --recognizer build/models/rec.lwm \
+  --dictionary models/ppocrv6-tiny/ppocr_keys.txt \
+  --model-name ppocrv6-tiny \
+  --rec-max-width 960 \
+  --output build-local-data/tiny-generated-ocr-960.json
+```
+
+For the Small profile, keep the shared Tiny CLS model and switch only DET,
+REC, and the dictionary:
+
+```bash
+python tools/evaluate_ocr_dataset.py \
+  --dataset build-local-data/lw-generated-ocr \
+  --driver build/Release/lw-ocr-ppm.exe \
+  --detector build-model-foundation/ppocrv6-small-det-dynamic.lwm \
+  --classifier build/models/cls.lwm \
+  --recognizer build-model-foundation/ppocrv6-small-rec-dynamic.lwm \
+  --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
+  --model-name ppocrv6-small \
+  --rec-max-width 960 \
+  --output build-local-data/small-generated-ocr-960.json
+```
+
+The evaluator verifies image hashes and dimensions, converts JPEG input to
+temporary PPM, invokes the existing native driver, and matches predicted boxes
+to generated boxes by one-to-one greedy IoU. It reports detection
+precision/recall/F1, matched-box IoU, CER on matched lines, exact reference-line
+rate, missing lines, and extra lines. It is a local model-analysis tool, not a
+release gate. Generated images must not be added to Git; any future checked-in
+fixture still needs an independent provenance and redistribution review.

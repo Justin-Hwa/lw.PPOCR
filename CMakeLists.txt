@@ -857,6 +857,8 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
                 tests.test_probe_rec_shape_metadata
                 tests.test_small_contracts
                 tests.test_medium_contracts
+                tests.test_ocr_dataset
+                tests.test_generate_ocr_dataset
                 tests.test_experimental_ops tests.test_small_ocr_baseline)
     set_tests_properties(model_analysis PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
