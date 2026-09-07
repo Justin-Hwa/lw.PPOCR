@@ -399,7 +399,10 @@ candidate was then implemented and retained after three repeated A/B pairs at
 four workers, improving complete wall time in every pair. The regular 5x1/1x5
 candidate was also retained after three repeated A/B pairs at both one and
 four workers. A fresh profile is now required before selecting another shape;
-no additional kernel is being added from an isolated node measurement.
+the retained 5x5 path has since received a register-tile follow-up, reducing
+node 251 by about 17–19% in a direct two-iteration A/B while leaving complete
+request wall time within noise. No new shape is being added from an isolated
+node measurement.
 
 The direct kernel and dispatch path are covered by `conv_kernel_reference`, and
 the complete result is covered by `full_ocr_pipeline_reference`.

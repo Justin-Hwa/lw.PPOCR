@@ -446,6 +446,15 @@ The full profile retained 16 lines and checksum `ededc8978c6a78ee` in every
 pair. These are local instrumented measurements rather than portable release
 latency promises; the direct kernel reference test is the correctness gate.
 
+A follow-up AVX2 path now keeps four output-channel accumulators in registers
+for each eight-column tile and writes them once after all 5x5 taps. In a
+two-iteration A/B against the previous one-output path, node 251 decreased
+from 41.37 to 33.55 ms at one worker (-18.9%) and from 41.56 to 34.50 ms at
+four workers (-17.0%). Full-request wall time was within measurement noise
+(+0.88% / +0.13%), so this is recorded as a node-level improvement, not an
+end-to-end latency claim. The checksum remained `ededc8978c6a78ee` with 16
+lines in both worker configurations.
+
 ## Medium DET depthwise 9x9 SIMD result
 
 The next Medium DET hotspot was depthwise `9x9`, stride-1, pad-4 Conv. The
