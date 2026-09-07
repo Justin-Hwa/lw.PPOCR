@@ -84,6 +84,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def text_pool_sha256(pool: Sequence[tuple[str, str]]) -> str:
+    payload = json.dumps(
+        list(pool), ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def default_font_candidates() -> list[Path]:
     candidates = [
         Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "msyh.ttc",
@@ -339,6 +346,7 @@ def generate_dataset(
             "name": "lw.PPOCR.C",
             "tool": "tools/generate_ocr_dataset.py",
             "corpus_id": corpus_id,
+            "text_pool_sha256": text_pool_sha256(pool),
             "orientation_policy": "0/180/90/-90" if include_vertical else "0/180",
             "renderer": "Pillow",
             "renderer_version": Image.__version__,

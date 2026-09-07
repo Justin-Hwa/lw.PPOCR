@@ -102,7 +102,16 @@ class OcrDatasetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "metadata.json").write_text(
-                json.dumps({"version": 1, "images": []}), encoding="utf-8"
+                json.dumps(
+                    {
+                        "version": 1,
+                        "generator": {
+                            "name": "lw.PPOCR.C",
+                            "tool": "tools/generate_ocr_dataset.py",
+                        },
+                        "images": [],
+                    }
+                ), encoding="utf-8"
             )
             with self.assertRaisesRegex(ValueError, "dataset generator"):
                 read_dataset(root)

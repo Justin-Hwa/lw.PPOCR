@@ -49,6 +49,7 @@ class GenerateOcrDatasetTests(unittest.TestCase):
             self.assertEqual(manifest["seed"], 9)
             self.assertEqual(manifest["generator"]["name"], "lw.PPOCR.C")
             self.assertEqual(manifest["generator"]["corpus_id"], "lw-ppocr-c-project-v1")
+            self.assertRegex(manifest["generator"]["text_pool_sha256"], r"^[0-9a-f]{64}$")
             self.assertEqual(manifest["generator"]["orientation_policy"], "0/180")
             self.assertEqual(len(manifest["images"]), 1)
             self.assertTrue(manifest["images"][0]["sha256"])

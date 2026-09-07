@@ -45,7 +45,8 @@ requested density does not fit a particular canvas, the generator records the
 requested and placed line counts instead of painting one text line over another.
 The manifest also includes a corpus identifier (`lw-ppocr-c-project-v1`) and
 orientation policy so a changed project text pool cannot silently reuse an
-older baseline. The default corpus uses only the orientations currently
+older baseline. It also stores a SHA-256 of the exact text pool. The default
+corpus uses only the orientations currently
 covered by the CLS contract: `0` and `180` degrees.
 The default text pool is project-specific: it covers PP-OCRv6 model profiles,
 DET/CLS/REC, LWM and WASM, Android/Java and C ABI integration, SIMD backends,
