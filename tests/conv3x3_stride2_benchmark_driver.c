@@ -22,6 +22,7 @@ typedef struct benchmark_case {
     uint32_t output_channels;
     uint32_t input_height;
     uint32_t input_width_divisor;
+    uint32_t fixed_input_width;
 } benchmark_case;
 
 static double monotonic_seconds(void) {
@@ -101,7 +102,9 @@ static lw_status run_dispatched(const float* input, const float* weights, const 
 
 static int run_case(const benchmark_case* item, uint32_t target_width, uint32_t iterations,
                     int first) {
-    const uint32_t input_width = target_width / item->input_width_divisor;
+    const uint32_t input_width = item->fixed_input_width != 0u
+                                     ? item->fixed_input_width
+                                     : target_width / item->input_width_divisor;
     const uint32_t output_height = item->input_height / 2u;
     const uint32_t output_width = input_width / 2u;
     const uint64_t input_count =
@@ -247,11 +250,12 @@ cleanup:
 
 int main(int argc, char** argv) {
     static const benchmark_case cases[] = {
-        {"stem-3x48", 3u, 48u, 48u, 1u},
-        {"early-96x48", 96u, 48u, 24u, 2u},
-        {"medium-det-64x128", 64u, 64u, 128u, 1u},
-        {"medium-det-64x64", 64u, 64u, 64u, 1u},
-        {"medium-det-64x32", 64u, 64u, 32u, 1u},
+        {"stem-3x48", 3u, 48u, 48u, 1u, 0u},
+        {"early-96x48", 96u, 48u, 24u, 2u, 0u},
+        {"medium-det-64x128", 64u, 64u, 128u, 1u, 0u},
+        {"medium-det-64x64", 64u, 64u, 64u, 1u, 0u},
+        {"medium-det-64x32", 64u, 64u, 32u, 1u, 0u},
+        {"medium-det-node8-128x256", 128u, 64u, 256u, 0u, 256u},
     };
     uint32_t target_width = 960u;
     uint32_t iterations = 3u;

@@ -354,6 +354,7 @@ checksum-validated benchmark at width 960:
 | 64×128×960 → 64×64×480 | 560.02 | 141.76 | 134.52 | 3.95x |
 | 64×64×960 → 64×32×480 | 290.82 | 55.21 | 51.25 | 5.27x |
 | 64×32×960 → 64×16×480 | 126.18 | 20.63 | 20.86 | 6.12x |
+| 128×256×256 → 64×128×128 (node 8) | 677.35 | 274.29 | 258.50 | 2.47x |
 
 The packed implementation is already close to the dispatched AVX2 path on
 these cases (about 1.05–1.08x faster than dispatched, with one small shape
@@ -361,6 +362,13 @@ within timing noise). This is a baseline, not a claim that the complete DET
 graph is optimized: Medium also contains large 5x5/7x7 and 9x9 depthwise or
 regular convolutions. Any new kernel should therefore be evaluated against
 the full-OCR 960 benchmark and the exact output checksum.
+
+The exact node-8 geometry is now included in the benchmark as a fixed-size
+case (`medium-det-node8-128x256`). It is intentionally reported separately
+because its 256×256 input does not derive from the benchmark's 320/960 width
+scaling. On the local AVX2 host, the packed path is 1.06x faster than the
+dispatched path and preserves checksum `0x0421bf5010f9294e`, so no replacement
+kernel is justified yet.
 
 The current DET profile makes that priority more concrete. Summing only the
 positive-time DET convolution nodes from the 960 profile gives approximately
