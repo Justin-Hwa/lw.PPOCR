@@ -58,6 +58,14 @@ the generated image files are not. This keeps CI and release packages small
 while allowing any developer to reproduce the same local dataset with the
 same seed, Pillow version, and fonts.
 
+The parser, generator, pairwise comparator, multi-model summary, and regression
+checker are included in the CMake `model_analysis` test. Run it with the
+configuration appropriate for the generator, for example:
+
+```bash
+ctest --test-dir build -C Release -R model_analysis --output-on-failure
+```
+
 Vertical `90/-90` degree text is intentionally an optional stress corpus rather
 than part of the core regression baseline. Generate it explicitly with
 `--include-vertical`; its manifest receives the separate
@@ -164,6 +172,25 @@ python tools/summarize_ocr_dataset_reports.py \
   --report Medium=build-local-data/medium-generated-ocr-960-core-full.json \
   --output build-local-data/tiny-small-medium-summary.json
 ```
+
+When a model or kernel change needs an explicit no-regression check, use the
+regression tool with absolute metric tolerances (`0.01` means one percentage
+point). All three thresholds are required so that a CI gate cannot silently
+inherit an unsuitable policy:
+
+```bash
+python tools/check_ocr_dataset_regression.py \
+  --baseline build-local-data/tiny-generated-ocr-960-core-full.json \
+  --candidate build-local-data/small-generated-ocr-960-core-full.json \
+  --max-f1-drop 0.01 \
+  --max-exact-drop 0.02 \
+  --max-cer-increase 0.01 \
+  --output build-local-data/tiny-vs-small-regression.json
+```
+
+The command exits nonzero only when a threshold is exceeded. It always checks
+that both reports use the same generated manifest, REC width, and IoU matching
+threshold before evaluating accuracy deltas.
 
 For example, compare Medium against both smaller profiles:
 

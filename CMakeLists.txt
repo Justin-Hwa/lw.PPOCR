@@ -861,6 +861,7 @@ if(BUILD_TESTING AND NOT EMSCRIPTEN)
                 tests.test_generate_ocr_dataset
                 tests.test_compare_ocr_dataset_reports
                 tests.test_summarize_ocr_dataset_reports
+                tests.test_check_ocr_dataset_regression
                 tests.test_experimental_ops tests.test_small_ocr_baseline)
     set_tests_properties(model_analysis PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
