@@ -490,3 +490,23 @@ The 1-worker pairs were within measurement noise on complete wall time, while
 all 4-worker pairs improved. Every pair retained 16 lines and checksum
 `ededc8978c6a78ee`; the direct kernel reference test remains the correctness
 gate.
+
+## Medium DET asymmetric 5x1/1x5 SIMD result
+
+The follow-up asymmetric family is regular `5x1` and `1x5`, stride-1,
+same-size Conv. The implementation reuses the validated AVX2 axis kernel with
+the shorter kernel and pad-2 border trim; non-x86 and unsupported geometries
+remain on the generic reference path.
+
+Three repeated two-iteration Medium 960 A/B pairs against a clean build with
+the 9x9 and 7x1/1x7 paths, but without 5x1/1x5, produced:
+
+| Workers | Wall change | Conv work change |
+|---:|---:|---:|
+| 1 | -2.97% | -3.41% |
+| 4 | -2.96% | -0.80% |
+
+The 1-worker node diagnostics fell from about 157.27 ms to 6.52 ms for 5x1
+and from 89.79 ms to 8.84 ms for 1x5. All pairs retained 16 lines and
+checksum `ededc8978c6a78ee`; the direct kernel reference test remains the
+correctness gate.

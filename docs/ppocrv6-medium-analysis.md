@@ -388,8 +388,10 @@ the full-OCR checksum. The 9x9 depthwise candidate was then implemented and
 retained after three repeated full-OCR A/B pairs; it reduced the dominant node
 by about 85% and reduced complete Conv work in every pair. The regular 7x1/1x7
 candidate was then implemented and retained after three repeated A/B pairs at
-four workers, improving complete wall time in every pair. The next candidate
-is regular 5x1/1x5, subject to the same full-OCR A/B gate.
+four workers, improving complete wall time in every pair. The regular 5x1/1x5
+candidate was also retained after three repeated A/B pairs at both one and
+four workers. A fresh profile is now required before selecting another shape;
+no additional kernel is being added from an isolated node measurement.
 
 The direct kernel and dispatch path are covered by `conv_kernel_reference`, and
 the complete result is covered by `full_ocr_pipeline_reference`.

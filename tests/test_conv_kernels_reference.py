@@ -104,6 +104,8 @@ def expected_results() -> dict[str, np.ndarray]:
     conv_axis_input = fill_values(342, 17, 43, 21, 11.0).reshape(1, 2, 9, 19)
     conv7x1_weights = fill_values(56, 43, 79, 37, 17.0).reshape(4, 2, 7, 1)
     conv1x7_weights = fill_values(56, 47, 83, 39, 19.0).reshape(4, 2, 1, 7)
+    conv5x1_weights = fill_values(40, 53, 89, 41, 23.0).reshape(4, 2, 5, 1)
+    conv1x5_weights = fill_values(40, 59, 97, 43, 29.0).reshape(4, 2, 1, 5)
     conv_axis_bias = np.asarray([0.375, -0.625, 0.125, -0.875], dtype=np.float32)
     asymmetric_input = fill_values(6, 3, 11, 5, 4.0).reshape(1, 1, 2, 3)
     asymmetric_weights = fill_values(4, 5, 13, 6, 3.0).reshape(1, 1, 2, 2)
@@ -197,6 +199,14 @@ def expected_results() -> dict[str, np.ndarray]:
         "conv1x7": conv2d_reference(
             conv_axis_input, conv1x7_weights, conv_axis_bias,
             (1, 1), (1, 1), (0, 3, 0, 3), 1,
+        ).ravel(),
+        "conv5x1": conv2d_reference(
+            conv_axis_input, conv5x1_weights, conv_axis_bias,
+            (1, 1), (1, 1), (2, 0, 2, 0), 1,
+        ).ravel(),
+        "conv1x5": conv2d_reference(
+            conv_axis_input, conv1x5_weights, conv_axis_bias,
+            (1, 1), (1, 1), (0, 2, 0, 2), 1,
         ).ravel(),
         "asymmetric_conv": conv2d_reference(
             asymmetric_input, asymmetric_weights, None,

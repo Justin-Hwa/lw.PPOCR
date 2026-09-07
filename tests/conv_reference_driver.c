@@ -294,6 +294,12 @@ int main(void) {
     const int32_t conv1x7_weight_dimensions[4] = {4, 2, 1, 7};
     const int32_t conv1x7_kernel[2] = {1, 7};
     const int32_t conv1x7_pads[4] = {0, 3, 0, 3};
+    const int32_t conv5x1_weight_dimensions[4] = {4, 2, 5, 1};
+    const int32_t conv5x1_kernel[2] = {5, 1};
+    const int32_t conv5x1_pads[4] = {2, 0, 2, 0};
+    const int32_t conv1x5_weight_dimensions[4] = {4, 2, 1, 5};
+    const int32_t conv1x5_kernel[2] = {1, 5};
+    const int32_t conv1x5_pads[4] = {0, 2, 0, 2};
     const int32_t unit_conv2x2_pads[4] = {0, 0, 1, 1};
     const int32_t invalid_output_dimensions[4] = {2, 3, 2, 2};
     const int32_t normal_kernel[2] = {3, 3};
@@ -406,6 +412,14 @@ int main(void) {
     float conv1x7_output[684];
     float conv1x7_simd_output[684];
     float conv1x7_dispatched_output[684];
+    float conv5x1_weights[40];
+    float conv5x1_output[684];
+    float conv5x1_simd_output[684];
+    float conv5x1_dispatched_output[684];
+    float conv1x5_weights[40];
+    float conv1x5_output[684];
+    float conv1x5_simd_output[684];
+    float conv1x5_dispatched_output[684];
     float grouped_input[64];
     float grouped_weights[108];
     float grouped_output[96];
@@ -912,6 +926,52 @@ int main(void) {
         return 1;
     }
     print_values("conv1x7", conv1x7_output, 684u);
+
+    fill_values(conv5x1_weights, 40u, 53u, 89u, 41, 23.0f);
+    reference_conv_axis(conv7x7_input, conv5x1_weights, conv7x7_bias, conv5x1_output,
+                        conv7x7_input_dimensions, conv7x7_output_dimensions, 5u, 1u, 2u, 0u);
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_avx2_conv5x1_unit_pad2_f32(conv7x7_input, conv5x1_weights, conv7x7_bias,
+                                      conv5x1_simd_output, conv7x7_input_dimensions,
+                                      conv7x7_output_dimensions);
+        if (memcmp(conv5x1_output, conv5x1_simd_output, sizeof(conv5x1_output)) != 0) {
+            fprintf(stderr, "AVX2 5x1 Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    status = lw_scalar_conv2d_f32(conv7x7_input, conv5x1_weights, conv7x7_bias, 4u,
+                                  conv5x1_dispatched_output, conv7x7_input_dimensions,
+                                  conv5x1_weight_dimensions, conv7x7_output_dimensions,
+                                  conv5x1_kernel, unit_strides, unit_dilations, conv5x1_pads, 1u);
+    if (!expect_status("5x1 conv", status, LW_STATUS_OK) ||
+        memcmp(conv5x1_output, conv5x1_dispatched_output, sizeof(conv5x1_output)) != 0) {
+        fprintf(stderr, "dispatched 5x1 Conv differs from scalar output\n");
+        return 1;
+    }
+    print_values("conv5x1", conv5x1_output, 684u);
+
+    fill_values(conv1x5_weights, 40u, 59u, 97u, 43, 29.0f);
+    reference_conv_axis(conv7x7_input, conv1x5_weights, conv7x7_bias, conv1x5_output,
+                        conv7x7_input_dimensions, conv7x7_output_dimensions, 1u, 5u, 0u, 2u);
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_avx2_conv1x5_unit_pad2_f32(conv7x7_input, conv1x5_weights, conv7x7_bias,
+                                      conv1x5_simd_output, conv7x7_input_dimensions,
+                                      conv7x7_output_dimensions);
+        if (memcmp(conv1x5_output, conv1x5_simd_output, sizeof(conv1x5_output)) != 0) {
+            fprintf(stderr, "AVX2 1x5 Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    status = lw_scalar_conv2d_f32(conv7x7_input, conv1x5_weights, conv7x7_bias, 4u,
+                                  conv1x5_dispatched_output, conv7x7_input_dimensions,
+                                  conv1x5_weight_dimensions, conv7x7_output_dimensions,
+                                  conv1x5_kernel, unit_strides, unit_dilations, conv1x5_pads, 1u);
+    if (!expect_status("1x5 conv", status, LW_STATUS_OK) ||
+        memcmp(conv1x5_output, conv1x5_dispatched_output, sizeof(conv1x5_output)) != 0) {
+        fprintf(stderr, "dispatched 1x5 Conv differs from scalar output\n");
+        return 1;
+    }
+    print_values("conv1x5", conv1x5_output, 684u);
 
     fill_values(asymmetric_input, 6u, 3u, 11u, 5, 4.0f);
     fill_values(asymmetric_weights, 4u, 5u, 13u, 6, 3.0f);

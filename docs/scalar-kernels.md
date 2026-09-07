@@ -60,8 +60,8 @@ AVX2 or SSE2 kernels. Each lane starts from the channel bias and visits the same
 valid kernel positions in the same order as the portable scalar specialization;
 the only difference is that eight or four independent output positions advance
 together. Border positions and non-vector-aligned row tails remain scalar. The
-Medium DET regular 7x1 and 1x7 shapes also have an AVX2 path with the same
-multiply-then-add contract. All other Depthwise, grouped, dilated, or
+Medium DET regular 7x1/1x7 and 5x1/1x5 shapes also have an AVX2 path with the
+same multiply-then-add contract. All other Depthwise, grouped, dilated, or
 asymmetric shapes retain the general Conv implementation.
 
 ## Correctness tests

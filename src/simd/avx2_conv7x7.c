@@ -200,14 +200,15 @@ __attribute__((target("avx2,no-fma")))
 #endif
 static void lw_avx2_conv_axis_f32(const float* input, const float* weights, const float* bias,
                                   float* output, const int32_t input_dimensions[4],
-                                  const int32_t output_dimensions[4], uint32_t vertical) {
+                                  const int32_t output_dimensions[4], uint32_t kernel_size,
+                                  uint32_t padding, uint32_t vertical) {
 #if LW_COMPILES_AVX2_CONV7X7
     const uint32_t input_channels = (uint32_t)input_dimensions[1];
     const uint32_t height = (uint32_t)input_dimensions[2];
     const uint32_t width = (uint32_t)input_dimensions[3];
     const uint32_t output_channels = (uint32_t)output_dimensions[1];
     const uint64_t channel_plane = (uint64_t)height * width;
-    const uint64_t weights_per_output = (uint64_t)input_channels * 7u;
+    const uint64_t weights_per_output = (uint64_t)input_channels * kernel_size;
     uint32_t batch;
 
     for (batch = 0u; batch < (uint32_t)input_dimensions[0]; ++batch) {
@@ -237,19 +238,19 @@ static void lw_avx2_conv_axis_f32(const float* input, const float* weights, cons
                 const float* input_channel_data =
                     batch_input + (size_t)((uint64_t)input_channel * channel_plane);
                 const float* channel_weights =
-                    output_weights + (size_t)((uint64_t)input_channel * 7u);
+                    output_weights + (size_t)((uint64_t)input_channel * kernel_size);
                 uint32_t kernel_index;
-                for (kernel_index = 0u; kernel_index < 7u; ++kernel_index) {
+                for (kernel_index = 0u; kernel_index < kernel_size; ++kernel_index) {
                     const float weight = channel_weights[kernel_index];
                     const __m256 weight_values = _mm256_set1_ps(weight);
                     uint32_t output_y;
                     if (vertical != 0u) {
                         const uint32_t output_y_begin =
-                            kernel_index < 3u ? 3u - kernel_index : 0u;
+                            kernel_index < padding ? padding - kernel_index : 0u;
                         const uint32_t output_y_end =
-                            kernel_index > 3u ? height - (kernel_index - 3u) : height;
+                            kernel_index > padding ? height - (kernel_index - padding) : height;
                         for (output_y = output_y_begin; output_y < output_y_end; ++output_y) {
-                            const uint32_t input_y = output_y + kernel_index - 3u;
+                            const uint32_t input_y = output_y + kernel_index - padding;
                             const float* input_row =
                                 input_channel_data + (size_t)((uint64_t)input_y * width);
                             float* output_row =
@@ -268,9 +269,9 @@ static void lw_avx2_conv_axis_f32(const float* input, const float* weights, cons
                         }
                     } else {
                         const uint32_t output_x_begin =
-                            kernel_index < 3u ? 3u - kernel_index : 0u;
+                            kernel_index < padding ? padding - kernel_index : 0u;
                         const uint32_t output_x_end =
-                            kernel_index > 3u ? width - (kernel_index - 3u) : width;
+                            kernel_index > padding ? width - (kernel_index - padding) : width;
                         for (output_y = 0u; output_y < height; ++output_y) {
                             const float* input_row =
                                 input_channel_data + (size_t)((uint64_t)output_y * width);
@@ -278,7 +279,7 @@ static void lw_avx2_conv_axis_f32(const float* input, const float* weights, cons
                                 output_channel_data + (size_t)((uint64_t)output_y * width);
                             uint32_t output_x = output_x_begin;
                             for (; output_x + 8u <= output_x_end; output_x += 8u) {
-                                const uint32_t input_x = output_x + kernel_index - 3u;
+                                const uint32_t input_x = output_x + kernel_index - padding;
                                 const __m256 input_values = _mm256_loadu_ps(input_row + input_x);
                                 __m256 output_values = _mm256_loadu_ps(output_row + output_x);
                                 output_values = _mm256_add_ps(
@@ -286,7 +287,7 @@ static void lw_avx2_conv_axis_f32(const float* input, const float* weights, cons
                                 _mm256_storeu_ps(output_row + output_x, output_values);
                             }
                             for (; output_x < output_x_end; ++output_x) {
-                                const uint32_t input_x = output_x + kernel_index - 3u;
+                                const uint32_t input_x = output_x + kernel_index - padding;
                                 output_row[output_x] += input_row[input_x] * weight;
                             }
                         }
@@ -302,6 +303,8 @@ static void lw_avx2_conv_axis_f32(const float* input, const float* weights, cons
     (void)output;
     (void)input_dimensions;
     (void)output_dimensions;
+    (void)kernel_size;
+    (void)padding;
     (void)vertical;
 #endif
 }
@@ -314,7 +317,8 @@ void lw_avx2_conv7x1_unit_pad3_f32(const float* input, const float* weights,
                                    const int32_t input_dimensions[4],
                                    const int32_t output_dimensions[4]) {
 #if LW_COMPILES_AVX2_CONV7X7
-    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 1u);
+    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 7u,
+                          3u, 1u);
 #else
     lw_scalar_conv2d_f32(input, weights, bias, (uint32_t)output_dimensions[1], output,
                          input_dimensions, (const int32_t[4]){output_dimensions[1],
@@ -333,7 +337,8 @@ void lw_avx2_conv1x7_unit_pad3_f32(const float* input, const float* weights,
                                    const int32_t input_dimensions[4],
                                    const int32_t output_dimensions[4]) {
 #if LW_COMPILES_AVX2_CONV7X7
-    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 0u);
+    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 7u,
+                          3u, 0u);
 #else
     lw_scalar_conv2d_f32(input, weights, bias, (uint32_t)output_dimensions[1], output,
                          input_dimensions, (const int32_t[4]){output_dimensions[1],
@@ -341,5 +346,45 @@ void lw_avx2_conv1x7_unit_pad3_f32(const float* input, const float* weights,
                          output_dimensions, (const int32_t[2]){1, 7},
                          (const int32_t[2]){1, 1}, (const int32_t[2]){1, 1},
                          (const int32_t[4]){0, 3, 0, 3}, 1u);
+#endif
+}
+
+#if LW_COMPILES_AVX2_CONV7X7 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+void lw_avx2_conv5x1_unit_pad2_f32(const float* input, const float* weights,
+                                   const float* bias, float* output,
+                                   const int32_t input_dimensions[4],
+                                   const int32_t output_dimensions[4]) {
+#if LW_COMPILES_AVX2_CONV7X7
+    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 5u,
+                          2u, 1u);
+#else
+    lw_scalar_conv2d_f32(input, weights, bias, (uint32_t)output_dimensions[1], output,
+                         input_dimensions, (const int32_t[4]){output_dimensions[1],
+                                                               input_dimensions[1], 5, 1},
+                         output_dimensions, (const int32_t[2]){5, 1},
+                         (const int32_t[2]){1, 1}, (const int32_t[2]){1, 1},
+                         (const int32_t[4]){2, 0, 2, 0}, 1u);
+#endif
+}
+
+#if LW_COMPILES_AVX2_CONV7X7 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+void lw_avx2_conv1x5_unit_pad2_f32(const float* input, const float* weights,
+                                   const float* bias, float* output,
+                                   const int32_t input_dimensions[4],
+                                   const int32_t output_dimensions[4]) {
+#if LW_COMPILES_AVX2_CONV7X7
+    lw_avx2_conv_axis_f32(input, weights, bias, output, input_dimensions, output_dimensions, 5u,
+                          2u, 0u);
+#else
+    lw_scalar_conv2d_f32(input, weights, bias, (uint32_t)output_dimensions[1], output,
+                         input_dimensions, (const int32_t[4]){output_dimensions[1],
+                                                               input_dimensions[1], 1, 5},
+                         output_dimensions, (const int32_t[2]){1, 5},
+                         (const int32_t[2]){1, 1}, (const int32_t[2]){1, 1},
+                         (const int32_t[4]){0, 2, 0, 2}, 1u);
 #endif
 }
