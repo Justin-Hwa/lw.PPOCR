@@ -244,8 +244,8 @@ static lw_status configure_session(lw_recognizer* recognizer, uint32_t target_wi
     use_ctc_greedy = lw_session_supports_ctc_greedy_f32(session, time_steps, class_count);
     if (input_element_count > SIZE_MAX / sizeof(*input) ||
         probability_element_count > SIZE_MAX / sizeof(*probabilities) ||
-        (uint64_t)time_steps > SIZE_MAX / sizeof(*best_indices) ||
-        (uint64_t)time_steps > SIZE_MAX / sizeof(*best_probabilities)) {
+        (uint64_t)time_steps > (uint64_t)(SIZE_MAX / sizeof(*best_indices)) ||
+        (uint64_t)time_steps > (uint64_t)(SIZE_MAX / sizeof(*best_probabilities))) {
         lw_session_free(session);
         lw_set_error(error, LW_STATUS_OUT_OF_BOUNDS, "recognizer buffer size overflows");
         return LW_STATUS_OUT_OF_BOUNDS;
