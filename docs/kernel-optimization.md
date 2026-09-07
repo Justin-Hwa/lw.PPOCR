@@ -528,6 +528,35 @@ median fell from 1439.74 ms to 1417.21 ms (1.56%), and the four-worker median
 fell from 612.46 ms to 603.58 ms (1.45%). The post-DET portion improved by
 1.67% and 2.81% respectively, with the same 16-line result contract.
 
+## Small REC unit-stride 2x2 Conv microkernel
+
+The Small REC profile also contains two unit-stride 2x2 convolutions with
+bottom/right pad 1: node 3 (`1x48x24x480 -> 1x24x24x480`) and node 6
+(`1x24x24x480 -> 1x48x24x480`). The previous SSE2 and AVX2 implementations
+processed one output channel at a time, so every output channel reloaded the
+same input vector. The retained path processes four output channels together,
+reusing that input vector across four accumulators. It keeps the existing
+portable scalar path and public dispatch unchanged; only the eligible
+four-output SSE2/AVX2 shapes use the microkernel. No workspace or model-format
+change is required.
+
+The convolution reference fixture compares the scalar, public-dispatch, SSE2,
+and AVX2 results bit-for-bit, including a non-vector-aligned width. On the
+same Windows x64 AVX2 machine, three 30-iteration width-960 profiles measured
+the following per-node totals:
+
+| REC node | Previous SIMD path | Four-output path | Reduction |
+|---|---:|---:|---:|
+| 3 (`48x24x480 -> 24x24x480`) | 107.854 ms | 61.171 ms | 43.28% |
+| 6 (`24x24x480 -> 48x24x480`) | 110.208 ms | 63.250 ms | 42.61% |
+
+The complete Small 500x500 OCR profile retained 16 lines and the same output
+checksum (`f635a7be50e95247`). Across three runs at REC width 960, mean wall
+latency changed from 5068.97 ms to 5054.77 ms with one worker (0.28%), and
+from 2750.29 ms to 2694.51 ms with four workers (2.03%). These are local
+engineering measurements rather than portable release gates; the isolated
+node improvement is the reason to retain the change.
+
 ## Full OCR line-level parallelism
 
 The OpenCV reference implementation gains multi-line throughput from multiple

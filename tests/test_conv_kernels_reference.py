@@ -88,6 +88,7 @@ def expected_results() -> dict[str, np.ndarray]:
     unit_conv_weights = fill_values(54, 19, 37, 18, 9.0).reshape(2, 3, 3, 3)
     unit_conv_bias = np.asarray([0.375, -0.625], dtype=np.float32)
     unit_conv2x2_weights = fill_values(24, 23, 41, 20, 10.0).reshape(2, 3, 2, 2)
+    unit_conv2x2_four_weights = fill_values(48, 27, 43, 21, 8.0).reshape(4, 3, 2, 2)
     grouped_input = fill_values(64, 3, 23, 11, 5.0).reshape(1, 4, 4, 4)
     grouped_weights = fill_values(108, 11, 29, 14, 7.0).reshape(6, 2, 3, 3)
     depthwise_input = fill_values(60, 13, 31, 15, 8.0).reshape(1, 3, 4, 5)
@@ -152,6 +153,11 @@ def expected_results() -> dict[str, np.ndarray]:
         ).ravel(),
         "unit_stride_conv2x2": conv2d_reference(
             unit_conv_input, unit_conv2x2_weights, unit_conv_bias,
+            (1, 1), (1, 1), (0, 0, 1, 1), 1,
+        ).ravel(),
+        "unit_stride_conv2x2_four": conv2d_reference(
+            unit_conv_input, unit_conv2x2_four_weights,
+            np.asarray([0.375, -0.625, 0.125, -0.875], dtype=np.float32),
             (1, 1), (1, 1), (0, 0, 1, 1), 1,
         ).ravel(),
         "grouped_conv": conv2d_reference(

@@ -112,6 +112,7 @@ int main(void) {
     const int32_t unit_conv_output_dimensions[4] = {1, 2, 5, 19};
     const int32_t unit_conv_four_output_dimensions[4] = {1, 4, 5, 19};
     const int32_t unit_conv2x2_weight_dimensions[4] = {2, 3, 2, 2};
+    const int32_t unit_conv2x2_four_weight_dimensions[4] = {4, 3, 2, 2};
     const int32_t unit_conv2x2_kernel[2] = {2, 2};
     const int32_t conv7x7_input_dimensions[4] = {1, 2, 9, 19};
     const int32_t conv7x7_weight_dimensions[4] = {4, 2, 7, 7};
@@ -204,6 +205,10 @@ int main(void) {
     float unit_conv2x2_output[190];
     float unit_conv2x2_dispatched_output[190];
     float unit_conv2x2_simd_output[190];
+    float unit_conv2x2_four_weights[48];
+    float unit_conv2x2_four_output[380];
+    float unit_conv2x2_four_dispatched_output[380];
+    float unit_conv2x2_four_simd_output[380];
     float conv7x7_input[342];
     float conv7x7_weights[392];
     float conv7x7_output[684];
@@ -437,6 +442,45 @@ int main(void) {
         return 1;
     }
     print_values("unit_stride_conv2x2", unit_conv2x2_output, 190u);
+
+    fill_values(unit_conv2x2_four_weights, 48u, 27u, 43u, 21, 8.0f);
+    lw_scalar_conv2x2_unit_pad_end1_f32(
+        unit_conv_input, unit_conv2x2_four_weights, unit_conv_four_bias,
+        unit_conv2x2_four_output, unit_conv_input_dimensions, unit_conv_four_output_dimensions);
+    if (lw_simd_level_is_sse2(simd_level)) {
+        lw_sse2_conv2x2_unit_pad_end1_f32(
+            unit_conv_input, unit_conv2x2_four_weights, unit_conv_four_bias,
+            unit_conv2x2_four_simd_output, unit_conv_input_dimensions,
+            unit_conv_four_output_dimensions);
+        if (memcmp(unit_conv2x2_four_output, unit_conv2x2_four_simd_output,
+                   sizeof(unit_conv2x2_four_output)) != 0) {
+            fprintf(stderr, "SSE2 four-output 2x2 Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_avx2_conv2x2_unit_pad_end1_f32(
+            unit_conv_input, unit_conv2x2_four_weights, unit_conv_four_bias,
+            unit_conv2x2_four_simd_output, unit_conv_input_dimensions,
+            unit_conv_four_output_dimensions);
+        if (memcmp(unit_conv2x2_four_output, unit_conv2x2_four_simd_output,
+                   sizeof(unit_conv2x2_four_output)) != 0) {
+            fprintf(stderr, "AVX2 four-output 2x2 Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    status = lw_scalar_conv2d_f32(
+        unit_conv_input, unit_conv2x2_four_weights, unit_conv_four_bias, 4u,
+        unit_conv2x2_four_dispatched_output, unit_conv_input_dimensions,
+        unit_conv2x2_four_weight_dimensions, unit_conv_four_output_dimensions,
+        unit_conv2x2_kernel, unit_strides, unit_dilations, unit_conv2x2_pads, 1u);
+    if (!expect_status("four-output 2x2 unit-stride conv", status, LW_STATUS_OK) ||
+        memcmp(unit_conv2x2_four_output, unit_conv2x2_four_dispatched_output,
+               sizeof(unit_conv2x2_four_output)) != 0) {
+        fprintf(stderr, "dispatched four-output 2x2 Conv differs from scalar output\n");
+        return 1;
+    }
+    print_values("unit_stride_conv2x2_four", unit_conv2x2_four_output, 380u);
 
     fill_values(grouped_input, 64u, 3u, 23u, 11, 5.0f);
     fill_values(grouped_weights, 108u, 11u, 29u, 14, 7.0f);
