@@ -166,3 +166,17 @@ python tools/compare_ocr_dataset_reports.py \
   --candidate build-local-data/medium-generated-ocr-960-core-full.json \
   --output build-local-data/small-vs-medium-core.json
 ```
+
+For reference, a local run on the 20260907 core corpus (614 reference lines)
+produced the following non-gating snapshot:
+
+| Profile | Detection F1 | Exact Line Rate | CER |
+|---|---:|---:|---:|
+| Tiny | 99.35% | 58.14% | 3.65% |
+| Small | 99.92% | 78.66% | 2.01% |
+| Medium | 100.00% | 80.62% | 1.26% |
+
+These numbers are for model selection and regression investigation, not a
+release promise. Re-run the commands above after changing a model, converter,
+dictionary, font, or runtime setting; do not silently update a baseline when a
+metric changes.
