@@ -330,3 +330,16 @@ The x64 target-node median fell from 5.435 ms to 1.989 ms, a 63.40% reduction
 (2.732x). The x86 median fell from 4.969 ms to 2.582 ms, a 48.03% reduction
 (1.924x). Every run reported `avx2`, retained the exact text and score, and had
 zero measured RSS growth.
+
+## Medium DET regular 7x7 SIMD result
+
+The Medium DET 960 profile identified regular `7x7`, stride-1, pad-3 Conv as
+the largest remaining detector hotspot. The new AVX2 path streams eight output
+columns while preserving the scalar accumulation order and disabling FMA. ARM,
+WASM, and unsupported geometries retain the portable reference path.
+
+Across the positive regular-7x7 nodes, the three-run instrumented average fell
+from approximately 166.8 ms to 25.4 ms on the local Windows x64 host. The full
+OCR checksum stayed `ededc8978c6a78ee` with 16 lines. Because this is node-level
+instrumentation, it is a hotspot checkpoint rather than a release latency claim;
+the next A/B candidate is Medium DET regular 5x5.

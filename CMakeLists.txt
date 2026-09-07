@@ -210,6 +210,7 @@ set(LW_PPOCR_C_SOURCES
     src/simd/avx2_conv1x1.c
     src/simd/avx2_conv2x2.c
     src/simd/avx2_conv3x3.c
+    src/simd/avx2_conv7x7.c
     src/simd/avx2_convtranspose2x2.c
     src/simd/avx2_depthwise3x3.c
     src/simd/avx2_depthwise5x5.c
@@ -236,7 +237,8 @@ set(LW_PPOCR_C_SOURCES
 if(MSVC AND MSVC_C_ARCHITECTURE_ID MATCHES "^(x64|X86)$")
     set_property(SOURCE src/simd/avx2_binary.c src/simd/avx2_conv1x1.c
         src/simd/avx2_conv2x2.c
-        src/simd/avx2_conv3x3.c src/simd/avx2_convtranspose2x2.c
+        src/simd/avx2_conv3x3.c src/simd/avx2_conv7x7.c
+        src/simd/avx2_convtranspose2x2.c
         src/simd/avx2_depthwise3x3.c
         src/simd/avx2_depthwise5x5.c
         src/simd/avx2_erf.c src/simd/avx2_matmul.c

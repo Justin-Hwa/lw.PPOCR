@@ -70,6 +70,9 @@ void lw_sse2_conv3x3_unit_pad1_f32(const float* input, const float* weights, con
 void lw_avx2_conv3x3_unit_pad1_f32(const float* input, const float* weights, const float* bias,
                                    float* output, const int32_t input_dimensions[4],
                                    const int32_t output_dimensions[4]);
+void lw_avx2_conv7x7_unit_pad3_f32(const float* input, const float* weights, const float* bias,
+                                   float* output, const int32_t input_dimensions[4],
+                                   const int32_t output_dimensions[4]);
 void lw_neon_conv3x3_unit_pad1_f32(const float* input, const float* weights, const float* bias,
                                    float* output, const int32_t input_dimensions[4],
                                    const int32_t output_dimensions[4]);

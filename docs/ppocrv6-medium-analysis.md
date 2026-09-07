@@ -367,6 +367,23 @@ positive-time DET convolution nodes from the 960 profile gives approximately
 166.77 ms for regular 7x7, 104.40 ms for regular 5x5, 81.67 ms for 9x9
 depthwise, and 43.80 ms for regular 3x3. The two ConvTranspose nodes together
 account for about 23.31 ms. These are instrumented node timings, so they are
-not portable latency promises, but they are sufficient to choose the next A/B
-candidate: start with a correctness-checked 7x7 path, then measure whether a
-5x5 path is worth its additional code and register pressure.
+not portable latency promises.
+
+## Medium DET regular 7x7 checkpoint
+
+The first Medium DET hotspot now has an AVX2 unit-stride `7x7`, pad-3 path.
+It streams eight output columns at a time, keeps the original input-channel /
+kernel accumulation order, and deliberately uses multiply-then-add rather than
+FMA. Non-x86 targets and shapes outside the validated geometry continue through
+the existing scalar reference path.
+
+The exact 960 profile was replayed three times after the change. The positive
+regular-7x7 nodes totalled about 25.4 ms per profile run, versus approximately
+166.8 ms in the preceding instrumented baseline. The full OCR output checksum
+remained `ededc8978c6a78ee` and the line count remained 16. This is an
+instrumented hotspot result, not a portable end-to-end latency promise; the next
+candidate is regular 5x5, followed by 9x9 depthwise only if its full-OCR A/B
+measurement justifies another specialized path.
+
+The direct kernel and dispatch path are covered by `conv_kernel_reference`, and
+the complete result is covered by `full_ocr_pipeline_reference`.

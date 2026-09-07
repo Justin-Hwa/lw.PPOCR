@@ -40,6 +40,64 @@ static void fill_values(float* values, uint32_t count, uint32_t multiplier, uint
     }
 }
 
+static void reference_conv7x7(const float* input, const float* weights, const float* bias,
+                              float* output, const int32_t input_dimensions[4],
+                              const int32_t output_dimensions[4]) {
+    const uint32_t input_channels = (uint32_t)input_dimensions[1];
+    const uint32_t input_height = (uint32_t)input_dimensions[2];
+    const uint32_t input_width = (uint32_t)input_dimensions[3];
+    const uint32_t output_channels = (uint32_t)output_dimensions[1];
+    const uint32_t output_height = (uint32_t)output_dimensions[2];
+    const uint32_t output_width = (uint32_t)output_dimensions[3];
+    const uint64_t input_plane = (uint64_t)input_height * input_width;
+    const uint64_t output_plane = (uint64_t)output_height * output_width;
+    const uint64_t weights_per_output = (uint64_t)input_channels * 49u;
+    uint32_t batch;
+    for (batch = 0u; batch < (uint32_t)input_dimensions[0]; ++batch) {
+        uint32_t output_channel;
+        for (output_channel = 0u; output_channel < output_channels; ++output_channel) {
+            const float* output_weights =
+                weights + (size_t)((uint64_t)output_channel * weights_per_output);
+            float* output_data = output +
+                                 (size_t)(((uint64_t)batch * output_channels + output_channel) *
+                                          output_plane);
+            uint32_t output_y;
+            for (output_y = 0u; output_y < output_height; ++output_y) {
+                uint32_t output_x;
+                for (output_x = 0u; output_x < output_width; ++output_x) {
+                    float value = bias == NULL ? 0.0f : bias[output_channel];
+                    uint32_t input_channel;
+                    for (input_channel = 0u; input_channel < input_channels; ++input_channel) {
+                        const float* input_data =
+                            input + (size_t)(((uint64_t)batch * input_channels + input_channel) *
+                                             input_plane);
+                        const float* input_weights =
+                            output_weights + (size_t)((uint64_t)input_channel * 49u);
+                        uint32_t kernel_y;
+                        for (kernel_y = 0u; kernel_y < 7u; ++kernel_y) {
+                            const int32_t input_y = (int32_t)output_y + (int32_t)kernel_y - 3;
+                            uint32_t kernel_x;
+                            if (input_y < 0 || input_y >= (int32_t)input_height) {
+                                continue;
+                            }
+                            for (kernel_x = 0u; kernel_x < 7u; ++kernel_x) {
+                                const int32_t input_x =
+                                    (int32_t)output_x + (int32_t)kernel_x - 3;
+                                if (input_x >= 0 && input_x < (int32_t)input_width) {
+                                    value += input_data[(size_t)((uint32_t)input_y * input_width +
+                                                                 (uint32_t)input_x)] *
+                                             input_weights[kernel_y * 7u + kernel_x];
+                                }
+                            }
+                        }
+                    }
+                    output_data[(size_t)output_y * output_width + output_x] = value;
+                }
+            }
+        }
+    }
+}
+
 int main(void) {
     const int32_t normal_input_dimensions[4] = {2, 2, 4, 5};
     const int32_t normal_weight_dimensions[4] = {3, 2, 3, 3};
@@ -55,6 +113,11 @@ int main(void) {
     const int32_t unit_conv_four_output_dimensions[4] = {1, 4, 5, 19};
     const int32_t unit_conv2x2_weight_dimensions[4] = {2, 3, 2, 2};
     const int32_t unit_conv2x2_kernel[2] = {2, 2};
+    const int32_t conv7x7_input_dimensions[4] = {1, 2, 9, 19};
+    const int32_t conv7x7_weight_dimensions[4] = {4, 2, 7, 7};
+    const int32_t conv7x7_output_dimensions[4] = {1, 4, 9, 19};
+    const int32_t conv7x7_kernel[2] = {7, 7};
+    const int32_t conv7x7_pads[4] = {3, 3, 3, 3};
     const int32_t unit_conv2x2_pads[4] = {0, 0, 1, 1};
     const int32_t invalid_output_dimensions[4] = {2, 3, 2, 2};
     const int32_t normal_kernel[2] = {3, 3};
@@ -104,6 +167,7 @@ int main(void) {
     const float stride2_four_bias[4] = {-0.125f, 0.625f, -0.875f, 0.375f};
     const float unit_conv_bias[2] = {0.375f, -0.625f};
     const float unit_conv_four_bias[4] = {0.375f, -0.625f, 0.125f, -0.875f};
+    const float conv7x7_bias[4] = {0.375f, -0.625f, 0.125f, -0.875f};
     const float unit_depthwise_bias[2] = {0.375f, -0.625f};
     const float pointwise_bias[6] = {0.25f, -0.5f, 1.0f, -1.25f, 0.75f, 0.5f};
     const float packed_pointwise_bias[7] = {0.25f, -0.5f, 1.0f, -1.25f, 0.75f, 0.5f, -0.125f};
@@ -137,6 +201,11 @@ int main(void) {
     float unit_conv2x2_output[190];
     float unit_conv2x2_dispatched_output[190];
     float unit_conv2x2_simd_output[190];
+    float conv7x7_input[342];
+    float conv7x7_weights[392];
+    float conv7x7_output[684];
+    float conv7x7_simd_output[684];
+    float conv7x7_dispatched_output[684];
     float grouped_input[64];
     float grouped_weights[108];
     float grouped_output[96];
@@ -285,6 +354,29 @@ int main(void) {
         return 1;
     }
     print_values("unit_stride_conv", unit_conv_output, 190u);
+
+    fill_values(conv7x7_input, 342u, 17u, 43u, 21, 11.0f);
+    fill_values(conv7x7_weights, 392u, 19u, 37u, 18, 9.0f);
+    reference_conv7x7(conv7x7_input, conv7x7_weights, conv7x7_bias, conv7x7_output,
+                     conv7x7_input_dimensions, conv7x7_output_dimensions);
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_avx2_conv7x7_unit_pad3_f32(conv7x7_input, conv7x7_weights, conv7x7_bias,
+                                      conv7x7_simd_output, conv7x7_input_dimensions,
+                                      conv7x7_output_dimensions);
+        if (memcmp(conv7x7_output, conv7x7_simd_output, sizeof(conv7x7_output)) != 0) {
+            fprintf(stderr, "AVX2 7x7 unit-stride Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    status = lw_scalar_conv2d_f32(
+        conv7x7_input, conv7x7_weights, conv7x7_bias, 4u, conv7x7_dispatched_output,
+        conv7x7_input_dimensions, conv7x7_weight_dimensions, conv7x7_output_dimensions,
+        conv7x7_kernel, unit_strides, unit_dilations, conv7x7_pads, 1u);
+    if (!expect_status("7x7 unit-stride conv", status, LW_STATUS_OK) ||
+        memcmp(conv7x7_output, conv7x7_dispatched_output, sizeof(conv7x7_output)) != 0) {
+        fprintf(stderr, "dispatched 7x7 Conv differs from scalar output\n");
+        return 1;
+    }
 
     /* Four output channels exercise the AVX2 unit-stride kernel that reuses
      * every input vector across four independent NCHW output planes. */
