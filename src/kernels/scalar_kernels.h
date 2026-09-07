@@ -37,9 +37,13 @@ lw_status lw_scalar_sigmoid_f32(const float* input, float* output, uint64_t elem
 lw_status lw_scalar_sqrt_f32(const float* input, float* output, uint64_t element_count);
 lw_status lw_scalar_softmax_f32(const float* input, float* output, uint32_t rank,
                                 const int32_t* dimensions, int32_t axis);
-lw_status lw_softmax_argmax_contiguous_f32(const float* input, uint32_t* best_indices,
-                                           float* best_probabilities, uint64_t row_count,
-                                           uint64_t axis_count);
+lw_status lw_ctc_greedy_softmax_contiguous_f32(const float* input, uint32_t* best_indices,
+                                               float* emitted_probabilities,
+                                               uint64_t row_count, uint64_t axis_count);
+lw_status lw_ctc_emitted_softmax_contiguous_f32(const float* input,
+                                                const uint32_t* best_indices,
+                                                float* emitted_probabilities,
+                                                uint64_t row_count, uint64_t axis_count);
 lw_status lw_scalar_transpose_f32(const float* input, float* output, uint32_t rank,
                                   const int32_t* input_dimensions, uint32_t permutation_count,
                                   const int32_t* permutation, const int32_t* output_dimensions);

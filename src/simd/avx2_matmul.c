@@ -145,10 +145,12 @@ void lw_avx2_matmul_shared_f32(
 #if LW_COMPILES_AVX2 && (defined(__GNUC__) || defined(__clang__))
 __attribute__((target("avx2,no-fma")))
 #endif
-void lw_avx2_packed_matmul_shared_f32(
+static void lw_avx2_packed_matmul_impl_f32(
     const float* input,
     const float* packed_weights,
+    const float* bias,
     float* output,
+    uint32_t* best_indices,
     uint32_t batch_count,
     uint32_t rows,
     uint32_t inner_dimension,
@@ -160,6 +162,26 @@ void lw_avx2_packed_matmul_shared_f32(
     if (rows < 4u || rows % 4u != 0u) {
         lw_scalar_packed_matmul_shared_f32(input, packed_weights, output, batch_count, rows,
                                            inner_dimension, columns);
+        if (bias != NULL && best_indices != NULL) {
+            uint32_t fallback_batch;
+            for (fallback_batch = 0u; fallback_batch < batch_count; ++fallback_batch) {
+                uint32_t row;
+                for (row = 0u; row < rows; ++row) {
+                    const uint64_t output_base =
+                        ((uint64_t)fallback_batch * rows + row) * columns;
+                    uint32_t best_index = 0u;
+                    uint32_t column;
+                    for (column = 0u; column < columns; ++column) {
+                        output[(size_t)(output_base + column)] += bias[column];
+                        if (column != 0u && output[(size_t)(output_base + column)] >
+                                                output[(size_t)(output_base + best_index)]) {
+                            best_index = column;
+                        }
+                    }
+                    best_indices[(size_t)((uint64_t)fallback_batch * rows + row)] = best_index;
+                }
+            }
+        }
         return;
     }
     for (batch = 0u; batch < batch_count; ++batch) {
@@ -220,21 +242,47 @@ void lw_avx2_packed_matmul_shared_f32(
                         accumulator2_low, accumulator2_high, accumulator3_low, accumulator3_high};
                     uint32_t current_row;
                     for (current_row = 0u; current_row < 4u; ++current_row) {
+                        const uint64_t result_row = (uint64_t)batch * rows + row + current_row;
                         float* destination =
-                            output + (size_t)(((uint64_t)batch * rows + row + current_row) *
-                                                  columns +
-                                              column_base);
-                        if (valid_columns == LW_PACKED_MATMUL_COLUMN_TILE) {
-                            _mm256_storeu_ps(destination, accumulators[current_row * 2u]);
-                            _mm256_storeu_ps(destination + 8u,
-                                             accumulators[current_row * 2u + 1u]);
+                            output + (size_t)(result_row * columns + column_base);
+                        if (bias == NULL || best_indices == NULL) {
+                            if (valid_columns == LW_PACKED_MATMUL_COLUMN_TILE) {
+                                _mm256_storeu_ps(destination, accumulators[current_row * 2u]);
+                                _mm256_storeu_ps(destination + 8u,
+                                                accumulators[current_row * 2u + 1u]);
+                            } else {
+                                float values[LW_PACKED_MATMUL_COLUMN_TILE];
+                                uint32_t lane;
+                                _mm256_storeu_ps(values, accumulators[current_row * 2u]);
+                                _mm256_storeu_ps(values + 8u,
+                                                accumulators[current_row * 2u + 1u]);
+                                for (lane = 0u; lane < valid_columns; ++lane) {
+                                    destination[lane] = values[lane];
+                                }
+                            }
                         } else {
                             float values[LW_PACKED_MATMUL_COLUMN_TILE];
+                            uint32_t best_index = column_base == 0u
+                                                      ? 0u
+                                                      : best_indices[(size_t)result_row];
+                            float best_value = column_base == 0u
+                                                   ? 0.0f
+                                                   : output[(size_t)(result_row * columns +
+                                                                     best_index)];
+                            uint32_t lane;
                             _mm256_storeu_ps(values, accumulators[current_row * 2u]);
                             _mm256_storeu_ps(values + 8u, accumulators[current_row * 2u + 1u]);
-                            for (uint32_t lane = 0u; lane < valid_columns; ++lane) {
-                                destination[lane] = values[lane];
+                            for (lane = 0u; lane < valid_columns; ++lane) {
+                                float value = values[lane] + bias[column_base + lane];
+                                destination[lane] = value;
+                                if ((column_base != 0u || lane != 0u) && value > best_value) {
+                                    best_value = value;
+                                    best_index = column_base + lane;
+                                } else if (column_base == 0u && lane == 0u) {
+                                    best_value = value;
+                                }
                             }
+                            best_indices[(size_t)result_row] = best_index;
                         }
                     }
                 }
@@ -244,5 +292,45 @@ void lw_avx2_packed_matmul_shared_f32(
 #else
     lw_scalar_packed_matmul_shared_f32(input, packed_weights, output, batch_count, rows,
                                        inner_dimension, columns);
+    if (bias != NULL && best_indices != NULL) {
+        uint32_t batch;
+        for (batch = 0u; batch < batch_count; ++batch) {
+            uint32_t row;
+            for (row = 0u; row < rows; ++row) {
+                const uint64_t output_base = ((uint64_t)batch * rows + row) * columns;
+                uint32_t best_index = 0u;
+                uint32_t column;
+                for (column = 0u; column < columns; ++column) {
+                    output[(size_t)(output_base + column)] += bias[column];
+                    if (column != 0u && output[(size_t)(output_base + column)] >
+                                            output[(size_t)(output_base + best_index)]) {
+                        best_index = column;
+                    }
+                }
+                best_indices[(size_t)((uint64_t)batch * rows + row)] = best_index;
+            }
+        }
+    }
 #endif
+}
+
+#if LW_COMPILES_AVX2 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+void lw_avx2_packed_matmul_shared_f32(
+    const float* input, const float* packed_weights, float* output, uint32_t batch_count,
+    uint32_t rows, uint32_t inner_dimension, uint32_t columns) {
+    lw_avx2_packed_matmul_impl_f32(input, packed_weights, NULL, output, NULL, batch_count, rows,
+                                   inner_dimension, columns);
+}
+
+#if LW_COMPILES_AVX2 && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+void lw_avx2_packed_matmul_bias_argmax_f32(
+    const float* input, const float* packed_weights, const float* bias, float* output,
+    uint32_t* best_indices, uint32_t batch_count, uint32_t rows,
+    uint32_t inner_dimension, uint32_t columns) {
+    lw_avx2_packed_matmul_impl_f32(input, packed_weights, bias, output, best_indices,
+                                   batch_count, rows, inner_dimension, columns);
 }

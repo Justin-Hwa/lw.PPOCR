@@ -19,9 +19,10 @@ void lw_avx2_erf_f32(const float* input, float* output, uint64_t element_count);
 void lw_avx2_gelu_f32(const float* input, float* output, uint64_t element_count);
 void lw_avx2_softmax_contiguous_f32(const float* input, float* output, uint64_t row_count,
                                     uint64_t axis_count);
-int lw_avx2_softmax_argmax_contiguous_f32(const float* input, uint32_t* best_indices,
-                                          float* best_probabilities, uint64_t row_count,
-                                          uint64_t axis_count);
+void lw_avx2_ctc_emitted_softmax_contiguous_f32(const float* input,
+                                                const uint32_t* best_indices,
+                                                float* emitted_probabilities,
+                                                uint64_t row_count, uint64_t axis_count);
 void lw_wasm128_erf_f32(const float* input, float* output, uint64_t element_count);
 
 void lw_sse2_matmul_shared_f32(const float* input, const float* weights, float* output,
@@ -33,6 +34,10 @@ void lw_avx2_matmul_shared_f32(const float* input, const float* weights, float* 
 void lw_avx2_packed_matmul_shared_f32(const float* input, const float* packed_weights,
                                       float* output, uint32_t batch_count, uint32_t rows,
                                       uint32_t inner_dimension, uint32_t columns);
+void lw_avx2_packed_matmul_bias_argmax_f32(
+    const float* input, const float* packed_weights, const float* bias, float* output,
+    uint32_t* best_indices, uint32_t batch_count, uint32_t rows,
+    uint32_t inner_dimension, uint32_t columns);
 void lw_sse2_conv1x1_unit_f32(const float* input, const float* weights, const float* bias,
                               float* output, const int32_t input_dimensions[4],
                               const int32_t output_dimensions[4], uint32_t groups,

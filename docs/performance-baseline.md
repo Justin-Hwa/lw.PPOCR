@@ -126,6 +126,13 @@ the complete probability tensor and replaces the recognizer-owned
 time step. Models without this terminal shape automatically retain the generic
 executor and full probability buffer. The public C ABI is unchanged.
 
+On x64 AVX2, the stricter `MatMul -> Add bias -> Softmax` tail also uses the
+session's prepared packed weights to calculate bias-adjusted logits and argmax
+in one pass. Softmax exponentials are then evaluated only for non-blank,
+non-repeated CTC emissions because no other time-step probability contributes
+to the public average recognition score. Other architectures keep the portable
+terminal CTC path and unsupported graph tails keep the fully generic path.
+
 A same-host A/B used binaries built from the same commit before and after this
 change, the bundled 500x500/16-line Tiny fixture, fixed REC width 960, two
 warm-ups, and 30 measured calls. Both variants returned the same 16 lines; the
@@ -134,13 +141,16 @@ also remained unchanged.
 
 | Workers | Previous mean | CTC greedy mean | Reduction | Previous peak RSS | CTC greedy peak RSS | Peak reduction |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1 | 354.44 ms | 349.28 ms | 1.45% | 92.72 MiB | 87.00 MiB | 5.71 MiB |
-| 4 | 156.98 ms | 150.51 ms | 4.12% | 167.26 MiB | 147.94 MiB | 19.32 MiB |
+| 1 | 350.30 ms | 317.46 ms | 9.38% | 92.26 MiB | 81.75 MiB | 10.51 MiB |
+| 4 | 154.83 ms | 140.80 ms | 9.07% | 166.47 MiB | 129.19 MiB | 37.28 MiB |
 
 Small and Medium REC were additionally smoke-tested at width 960 with the same
 crop and their shared dictionary; both returned `纯臻营养护发素`. The optimized
 terminal work is still attributed to the semantic Softmax node in execution
 profiles, so existing per-node and per-operator report contracts remain stable.
+In a three-iteration full-OCR profile, the 48 fused terminal Softmax calls took
+5.09 ms total; fused projection, bias, and argmax work remains attributed to
+the semantic MatMul/Add nodes.
 These measurements are local engineering evidence, not portable release gates.
 
 ## Local baseline

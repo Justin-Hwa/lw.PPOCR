@@ -113,6 +113,9 @@ int main(void) {
     float packed_matmul_weights_buffer[2048];
     float packed_matmul_reference[68];
     float packed_matmul_output[68];
+    float packed_matmul_bias[17];
+    float packed_matmul_bias_reference[68];
+    uint32_t packed_matmul_best_indices[4];
     uint32_t index;
     lw_simd_level simd_level;
     lw_status status;
@@ -356,6 +359,43 @@ int main(void) {
         if (memcmp(packed_matmul_reference, packed_matmul_output,
                    sizeof(packed_matmul_reference)) != 0) {
             fprintf(stderr, "AVX2 packed MatMul differs from canonical output\n");
+            return 1;
+        }
+        for (index = 0u; index < 17u; ++index) {
+            packed_matmul_bias[index] = (float)((int32_t)index - 8) / 23.0f;
+        }
+        for (uint32_t row = 0u; row < 4u; ++row) {
+            uint32_t best_index = 0u;
+            for (uint32_t column = 0u; column < 17u; ++column) {
+                uint32_t offset = row * 17u + column;
+                packed_matmul_bias_reference[offset] =
+                    packed_matmul_reference[offset] + packed_matmul_bias[column];
+                if (column != 0u && packed_matmul_bias_reference[offset] >
+                                        packed_matmul_bias_reference[row * 17u + best_index]) {
+                    best_index = column;
+                }
+            }
+            packed_matmul_best_indices[row] = best_index;
+        }
+        lw_avx2_packed_matmul_bias_argmax_f32(
+            packed_matmul_input, packed_matmul_weights_buffer, packed_matmul_bias,
+            packed_matmul_output, packed_matmul_best_indices, 1u, 4u, 64u, 17u);
+        for (uint32_t row = 0u; row < 4u; ++row) {
+            uint32_t expected_best = 0u;
+            for (uint32_t column = 1u; column < 17u; ++column) {
+                if (packed_matmul_bias_reference[row * 17u + column] >
+                    packed_matmul_bias_reference[row * 17u + expected_best]) {
+                    expected_best = column;
+                }
+            }
+            if (packed_matmul_best_indices[row] != expected_best) {
+                fprintf(stderr, "AVX2 packed MatMul fused argmax differs\n");
+                return 1;
+            }
+        }
+        if (memcmp(packed_matmul_bias_reference, packed_matmul_output,
+                   sizeof(packed_matmul_bias_reference)) != 0) {
+            fprintf(stderr, "AVX2 packed MatMul fused bias differs from canonical output\n");
             return 1;
         }
     }

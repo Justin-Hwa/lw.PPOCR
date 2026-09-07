@@ -334,8 +334,8 @@ int main(void) {
     }
     print_values("softmax_contiguous_axis_in_place", softmax_in_place, 24u);
 
-    status = lw_softmax_argmax_contiguous_f32(softmax_input, softmax_best_indices,
-                                              softmax_best_probabilities, 2u, 12u);
+    status = lw_ctc_greedy_softmax_contiguous_f32(
+        softmax_input, softmax_best_indices, softmax_best_probabilities, 2u, 12u);
     if (!expect_status("softmax argmax", status, LW_STATUS_OK)) {
         return 1;
     }
@@ -361,8 +361,8 @@ int main(void) {
     }
     memcpy(softmax_in_place, softmax_input, sizeof(softmax_input));
     softmax_in_place[7] = NAN;
-    status = lw_softmax_argmax_contiguous_f32(softmax_in_place, softmax_best_indices,
-                                              softmax_best_probabilities, 2u, 12u);
+    status = lw_ctc_greedy_softmax_contiguous_f32(
+        softmax_in_place, softmax_best_indices, softmax_best_probabilities, 2u, 12u);
     if (!expect_status("non-finite softmax argmax", status, LW_STATUS_INVALID_ARGUMENT)) {
         return 1;
     }

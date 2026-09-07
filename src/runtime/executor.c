@@ -925,12 +925,137 @@ int lw_session_supports_ctc_greedy_f32(const lw_session* session, uint32_t time_
     return ctc_greedy_tail(session, time_steps, class_count, NULL);
 }
 
+typedef struct lw_packed_ctc_projection {
+    uint32_t matmul_node_index;
+    uint32_t add_node_index;
+    const float* activation;
+    const float* packed_weights;
+    const float* bias;
+    float* logits;
+    uint32_t rows;
+    uint32_t inner_dimension;
+    uint32_t columns;
+} lw_packed_ctc_projection;
+
+static int match_packed_ctc_projection(lw_session* session, const float* graph_input,
+                                       uint32_t logits_index, uint32_t time_steps,
+                                       uint32_t class_count,
+                                       lw_packed_ctc_projection* projection) {
+    const lw_model* model = session->model;
+    uint32_t matmul_node_index;
+    uint32_t add_node_index;
+    const uint8_t* matmul_node;
+    const uint8_t* add_node;
+    uint32_t matmul_input_index;
+    uint32_t weights_index;
+    uint32_t matmul_output_index;
+    uint32_t bias_index;
+    const lw_runtime_tensor* activation;
+    const lw_runtime_tensor* weights;
+    const lw_runtime_tensor* matmul_output;
+    const lw_runtime_tensor* bias;
+    const lw_prepared_node* prepared;
+    uint32_t graph_input_index;
+    if (projection == NULL || model->info.node_count < 3u ||
+        !lw_simd_level_is_avx2(lw_detect_simd_level()) || session->prepared_nodes == NULL ||
+        session->packed_weights == NULL) {
+        return 0;
+    }
+    matmul_node_index = model->info.node_count - 3u;
+    add_node_index = model->info.node_count - 2u;
+    matmul_node = model->bytes + (size_t)model->node_offset +
+                  (size_t)matmul_node_index * LWM_V0_NODE_SIZE;
+    add_node = model->bytes + (size_t)model->node_offset +
+               (size_t)add_node_index * LWM_V0_NODE_SIZE;
+    if (lwm_read_u16(matmul_node) != LW_OP_MATMUL ||
+        lwm_read_u16(matmul_node + 2u) != 2u || lwm_read_u16(matmul_node + 4u) != 1u ||
+        lwm_read_u16(add_node) != LW_OP_ADD || lwm_read_u16(add_node + 2u) != 2u ||
+        lwm_read_u16(add_node + 4u) != 1u || lwm_read_u32(add_node + 40u) != logits_index) {
+        return 0;
+    }
+    matmul_input_index = lwm_read_u32(matmul_node + 8u);
+    weights_index = lwm_read_u32(matmul_node + 12u);
+    matmul_output_index = lwm_read_u32(matmul_node + 40u);
+    if (lwm_read_u32(add_node + 8u) == matmul_output_index) {
+        bias_index = lwm_read_u32(add_node + 12u);
+    } else if (lwm_read_u32(add_node + 12u) == matmul_output_index) {
+        bias_index = lwm_read_u32(add_node + 8u);
+    } else {
+        return 0;
+    }
+    activation = &session->tensors[matmul_input_index];
+    weights = &session->tensors[weights_index];
+    matmul_output = &session->tensors[matmul_output_index];
+    bias = &session->tensors[bias_index];
+    prepared = &session->prepared_nodes[matmul_node_index];
+    if (prepared->kind != LW_PREPARED_NODE_MATMUL_PACKED16 ||
+        activation->dtype != LW_DTYPE_F32 || activation->rank != 3u ||
+        activation->dimensions[0] != 1 || activation->dimensions[1] != (int32_t)time_steps ||
+        activation->dimensions[2] <= 0 || weights->dtype != LW_DTYPE_F32 ||
+        weights->rank != 2u || weights->dimensions[0] != activation->dimensions[2] ||
+        weights->dimensions[1] != (int32_t)class_count ||
+        (weights->flags & LWM_V0_TENSOR_FLAG_CONSTANT) == 0u ||
+        matmul_output->dtype != LW_DTYPE_F32 || matmul_output->rank != 3u ||
+        matmul_output->dimensions[0] != 1 ||
+        matmul_output->dimensions[1] != (int32_t)time_steps ||
+        matmul_output->dimensions[2] != (int32_t)class_count || bias->dtype != LW_DTYPE_F32 ||
+        bias->rank != 1u || bias->dimensions[0] != (int32_t)class_count ||
+        (bias->flags & LWM_V0_TENSOR_FLAG_CONSTANT) == 0u) {
+        return 0;
+    }
+    graph_input_index = lwm_read_u32(model->bytes + (size_t)model->input_offset);
+    projection->matmul_node_index = matmul_node_index;
+    projection->add_node_index = add_node_index;
+    projection->activation = tensor_input_data(session, matmul_input_index, graph_input_index,
+                                               graph_input);
+    projection->packed_weights =
+        (const float*)(const void*)(session->packed_weights +
+                                    (size_t)prepared->packed_weight_offset);
+    projection->bias = tensor_input_data(session, bias_index, graph_input_index, graph_input);
+    projection->logits = tensor_output_data(session, matmul_output_index);
+    projection->rows = time_steps;
+    projection->inner_dimension = (uint32_t)activation->dimensions[2];
+    projection->columns = class_count;
+    return projection->activation != NULL && projection->bias != NULL &&
+           projection->logits != NULL;
+}
+
+static void profile_simple_node(lw_execution_profile* profile, const lw_session* session,
+                                uint32_t node_index, uint64_t elapsed) {
+    const uint8_t* node;
+    uint32_t operation;
+    if (profile == NULL || node_index >= session->model->info.node_count) {
+        return;
+    }
+    if (elapsed == 0u) {
+        elapsed = 1u;
+    }
+    node = session->model->bytes + (size_t)session->model->node_offset +
+           (size_t)node_index * LWM_V0_NODE_SIZE;
+    operation = (uint32_t)lwm_read_u16(node);
+    if (operation < LW_EXECUTION_PROFILE_OPERATOR_CAPACITY &&
+        profile->operator_nanoseconds[operation] <= UINT64_MAX - elapsed &&
+        profile->operator_invocations[operation] != UINT64_MAX) {
+        profile->operator_nanoseconds[operation] += elapsed;
+        ++profile->operator_invocations[operation];
+    }
+    if (node_index < LW_EXECUTION_PROFILE_NODE_CAPACITY &&
+        profile->node_nanoseconds[node_index] <= UINT64_MAX - elapsed &&
+        profile->node_invocations[node_index] != UINT64_MAX) {
+        profile->node_nanoseconds[node_index] += elapsed;
+        ++profile->node_invocations[node_index];
+    }
+}
+
 lw_status lw_execute_session_f32_ctc_greedy(
     lw_session* session, const float* input, uint64_t input_element_count,
     uint32_t* best_indices, float* best_probabilities, uint32_t time_steps,
     uint32_t class_count, lw_execution_profile* profile, lw_error* error) {
     uint32_t logits_index;
     uint32_t softmax_node_index;
+    lw_packed_ctc_projection projection;
+    const float* logits;
+    int fused_projection;
     uint64_t started = 0u;
     uint64_t elapsed = 0u;
     lw_status status;
@@ -952,20 +1077,44 @@ lw_status lw_execute_session_f32_ctc_greedy(
         return LW_STATUS_UNSUPPORTED;
     }
     softmax_node_index = session->model->info.node_count - 1u;
-    status = execute_session_nodes_f32(session, input, input_element_count, softmax_node_index,
-                                       profile, error);
+    fused_projection = match_packed_ctc_projection(session, input, logits_index, time_steps,
+                                                   class_count, &projection);
+    status = execute_session_nodes_f32(
+        session, input, input_element_count,
+        fused_projection ? projection.matmul_node_index : softmax_node_index, profile, error);
     if (status != LW_STATUS_OK) {
         return status;
+    }
+    if (fused_projection) {
+        uint64_t projection_started = profile == NULL ? 0u : profile->clock(profile->clock_context);
+        uint64_t projection_elapsed = 0u;
+        lw_avx2_packed_matmul_bias_argmax_f32(
+            projection.activation, projection.packed_weights, projection.bias,
+            projection.logits, best_indices, 1u, projection.rows,
+            projection.inner_dimension, projection.columns);
+        if (profile != NULL) {
+            uint64_t projection_finished = profile->clock(profile->clock_context);
+            if (projection_finished >= projection_started) {
+                projection_elapsed = projection_finished - projection_started;
+            }
+            profile_simple_node(profile, session, projection.matmul_node_index,
+                                projection_elapsed);
+            profile_simple_node(profile, session, projection.add_node_index, 1u);
+        }
+        logits = projection.logits;
+    } else {
+        logits = tensor_input_data(
+            session, logits_index,
+            lwm_read_u32(session->model->bytes + (size_t)session->model->input_offset), input);
     }
     if (profile != NULL) {
         started = profile->clock(profile->clock_context);
     }
-    status = lw_softmax_argmax_contiguous_f32(
-        tensor_input_data(session, logits_index,
-                          lwm_read_u32(session->model->bytes +
-                                       (size_t)session->model->input_offset),
-                          input),
-        best_indices, best_probabilities, time_steps, class_count);
+    status = fused_projection
+                 ? lw_ctc_emitted_softmax_contiguous_f32(
+                       logits, best_indices, best_probabilities, time_steps, class_count)
+                 : lw_ctc_greedy_softmax_contiguous_f32(
+                       logits, best_indices, best_probabilities, time_steps, class_count);
     if (profile != NULL) {
         uint64_t finished = profile->clock(profile->clock_context);
         if (finished >= started) {
