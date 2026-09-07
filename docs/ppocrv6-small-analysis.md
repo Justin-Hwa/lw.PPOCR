@@ -317,6 +317,30 @@ x64 build; its JSON remains an ignored build artifact. Both commands accept
 stored in the baseline and reused by validation, so adaptive-width results are
 not compared across different runtime limits by accident.
 
+### Current width and REC profile snapshot
+
+On 2026-09-07, the uninstrumented Windows x64 AVX2 benchmark was repeated with
+the current dynamic Small DET/REC models, the shared Tiny CLS, the shared
+Small/Medium dictionary, `build/models/sample.ppm`, one warmup, and three timed
+iterations per point:
+
+| REC width | 1 worker mean | 4 worker mean | 1 worker peak RSS | 4 worker peak RSS |
+|---:|---:|---:|---:|---:|
+| 192 | 587.83 ms | 259.60 ms | 157.8 MiB | 296.9 MiB |
+| 320 | 878.49 ms | 383.79 ms | 161.6 MiB | 311.9 MiB |
+| 480 | 1,277.40 ms | 530.93 ms | 193.5 MiB | 438.4 MiB |
+| 640 | 1,360.59 ms | 675.95 ms | 203.0 MiB | 475.0 MiB |
+| 960 | 1,500.39 ms | 757.00 ms | 217.1 MiB | 506.2 MiB |
+
+This is a local planning snapshot, not a cross-platform performance claim.
+The matching three-iteration REC profile at width 960 spent about 351.49 ms
+in Conv, 60.23 ms in MatMul, 23.62 ms in Erf, and 21.40 ms in Add. Conv node
+11 (regular 3x3, stride 2, input `[1,96,24,480]`, output `[1,48,12,240]`)
+was the largest individual Conv at about 95.73 ms. The next optimization
+should therefore prototype and A/B this exact shape, then run the OCR
+regression gate; it should not be generalized to every 3x3 Conv without a
+reference comparison.
+
 ## Tiny versus Small REC accuracy snapshot
 
 `tools/compare_rec_accuracy.py` evaluates both recognizers on the same ten
