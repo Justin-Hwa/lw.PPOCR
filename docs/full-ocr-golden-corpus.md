@@ -105,6 +105,28 @@ python tools/evaluate_ocr_dataset.py \
   --output build-local-data/small-generated-ocr-960.json
 ```
 
+For the Medium profile, use the converted Medium DET/REC pair with the same
+Tiny CLS model and the shared Small/Medium recognition dictionary:
+
+```bash
+python tools/evaluate_ocr_dataset.py \
+  --dataset build-local-data/lw-generated-ocr \
+  --driver build/Release/lw-ocr-ppm.exe \
+  --detector build-model-foundation/medium-analysis/full-ocr/medium-det-dynamic.lwm \
+  --classifier build/models/cls.lwm \
+  --recognizer build-model-foundation/medium-analysis/full-ocr/medium-rec-dynamic.lwm \
+  --dictionary models/ppocrv6-shared/PP-OCRv6_small_rec_dict.txt \
+  --model-name ppocrv6-medium \
+  --rec-max-width 960 \
+  --output build-local-data/medium-generated-ocr-960.json
+```
+
+The three profiles therefore differ only in DET/REC capacity and dictionary
+where applicable: Tiny uses its Tiny dictionary, while Small and Medium share
+`PP-OCRv6_small_rec_dict.txt` and reuse the Tiny CLS model. Keep the REC width
+at 960 for an apples-to-apples comparison; changing it creates a different
+performance/accuracy experiment.
+
 The evaluator verifies image hashes and dimensions, converts JPEG input to
 temporary PPM, invokes the existing native driver, and matches predicted boxes
 to generated boxes by one-to-one greedy IoU. It reports detection
@@ -130,3 +152,17 @@ python tools/compare_ocr_dataset_reports.py \
 
 The comparison records candidate-minus-baseline deltas for the overall report
 and every category, orientation, and canvas group.
+
+For example, compare Medium against both smaller profiles:
+
+```bash
+python tools/compare_ocr_dataset_reports.py \
+  --baseline build-local-data/tiny-generated-ocr-960-core-full.json \
+  --candidate build-local-data/medium-generated-ocr-960-core-full.json \
+  --output build-local-data/tiny-vs-medium-core.json
+
+python tools/compare_ocr_dataset_reports.py \
+  --baseline build-local-data/small-generated-ocr-960-core-full.json \
+  --candidate build-local-data/medium-generated-ocr-960-core-full.json \
+  --output build-local-data/small-vs-medium-core.json
+```
