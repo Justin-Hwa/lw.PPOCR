@@ -153,6 +153,48 @@ In a three-iteration full-OCR profile, the 48 fused terminal Softmax calls took
 the semantic MatMul/Add nodes.
 These measurements are local engineering evidence, not portable release gates.
 
+## REC depthwise 3x3 stride-2x1 specialization
+
+The Tiny REC profile still had two depthwise convolutions on the general grouped
+Conv path. Both use a 3x3 kernel, vertical stride 2, horizontal stride 1,
+dilation 1, and pad 1. The new specialization keeps horizontal input access
+contiguous, trims the vertical boundary once per kernel row, and processes eight
+output columns with AVX2 or four with SSE2. Other targets use the same portable
+weight-major specialization, so ARM, LoongArch, scalar WASM, and unsupported x86
+hosts retain a correct path without changing the public ABI or model format.
+
+The reference fixture deliberately uses an odd input height and a width that is
+not divisible by either SIMD vector size. It compares the portable, SSE2, AVX2,
+and public-dispatch results bit-for-bit, then compares the output with the ONNX
+reference evaluator. REC reference, REC Golden Corpus, full-OCR reference, and
+full-OCR Golden Corpus tests also remain unchanged. Tiny, Small, and Medium REC
+returned the same `纯臻营养护发素` text on the shared crop.
+
+A same-commit Windows x64 Release profile used REC width 960 and 30 measured
+calls. The two target nodes and the complete Conv operator total changed as
+follows:
+
+| Profile item | General path | Specialized AVX2 path | Reduction |
+|---|---:|---:|---:|
+| REC node 39, per call | 0.765 ms | 0.051 ms | 93.31% |
+| REC node 82, per call | 0.743 ms | 0.048 ms | 93.49% |
+| All REC Conv nodes, per call | 15.233 ms | 13.101 ms | 13.99% |
+
+The complete 500x500/16-line Tiny OCR A/B used fixed REC width 960. The
+one-worker run used five warm-ups and 50 measured requests; the four-worker run
+used five warm-ups and 80 measured requests:
+
+| Workers | General mean | Specialized mean | Full reduction | General post-DET | Specialized post-DET | Post-DET reduction |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 319.98 ms | 300.11 ms | 6.21% | 234.93 ms | 214.99 ms | 8.49% |
+| 4 | 141.68 ms | 139.40 ms | 1.60% | 57.11 ms | 52.30 ms | 8.42% |
+
+Peak RSS was effectively flat: 81.77 versus 81.73 MiB with one worker and
+129.28 versus 128.93 MiB with four. Detector timing varied independently in the
+four-worker pair, so the post-DET column is the more direct measure of this REC
+change. These local results are engineering evidence rather than a portable
+release gate.
+
 ## Local baseline
 
 The following is one local measurement, not a general performance promise:

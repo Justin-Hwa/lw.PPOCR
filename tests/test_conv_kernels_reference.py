@@ -95,6 +95,7 @@ def expected_results() -> dict[str, np.ndarray]:
     unit_depthwise_input = fill_values(80, 17, 37, 18, 9.0).reshape(1, 2, 4, 10)
     unit_depthwise_weights = fill_values(18, 7, 19, 9, 6.0).reshape(2, 1, 3, 3)
     unit_depthwise_bias = np.asarray([0.375, -0.625], dtype=np.float32)
+    stride2x1_depthwise_input = fill_values(190, 23, 47, 23, 11.0).reshape(1, 2, 5, 19)
     unit_depthwise5x5_input = fill_values(228, 29, 53, 26, 13.0).reshape(1, 2, 6, 19)
     unit_depthwise5x5_weights = fill_values(50, 31, 47, 23, 12.0).reshape(2, 1, 5, 5)
     asymmetric_input = fill_values(6, 3, 11, 5, 4.0).reshape(1, 1, 2, 3)
@@ -164,6 +165,10 @@ def expected_results() -> dict[str, np.ndarray]:
         "unit_depthwise_conv": conv2d_reference(
             unit_depthwise_input, unit_depthwise_weights, unit_depthwise_bias,
             (1, 1), (1, 1), (1, 1, 1, 1), 2,
+        ).ravel(),
+        "stride2x1_depthwise_conv": conv2d_reference(
+            stride2x1_depthwise_input, unit_depthwise_weights, unit_depthwise_bias,
+            (2, 1), (1, 1), (1, 1, 1, 1), 2,
         ).ravel(),
         "unit_depthwise_conv5x5": conv2d_reference(
             unit_depthwise5x5_input, unit_depthwise5x5_weights, unit_depthwise_bias,

@@ -135,6 +135,9 @@ int main(void) {
     const int32_t depthwise_dilations[2] = {1, 2};
     const int32_t unit_depthwise_dimensions[4] = {1, 2, 4, 10};
     const int32_t unit_depthwise_weight_dimensions[4] = {2, 1, 3, 3};
+    const int32_t stride2x1_depthwise_input_dimensions[4] = {1, 2, 5, 19};
+    const int32_t stride2x1_depthwise_output_dimensions[4] = {1, 2, 3, 19};
+    const int32_t stride2x1_depthwise_strides[2] = {2, 1};
     const int32_t unit_depthwise5x5_dimensions[4] = {1, 2, 6, 19};
     const int32_t unit_depthwise5x5_weight_dimensions[4] = {2, 1, 5, 5};
     const int32_t depthwise5x5_kernel[2] = {5, 5};
@@ -217,6 +220,10 @@ int main(void) {
     float unit_depthwise_output[80];
     float unit_depthwise_dispatched_output[80];
     float unit_depthwise_simd_output[80];
+    float stride2x1_depthwise_input[190];
+    float stride2x1_depthwise_output[114];
+    float stride2x1_depthwise_dispatched_output[114];
+    float stride2x1_depthwise_simd_output[114];
     float unit_depthwise5x5_input[228];
     float unit_depthwise5x5_weights[50];
     float unit_depthwise5x5_output[228];
@@ -489,6 +496,46 @@ int main(void) {
         return 1;
     }
     print_values("unit_depthwise_conv", unit_depthwise_output, 80u);
+
+    fill_values(stride2x1_depthwise_input, 190u, 23u, 47u, 23, 11.0f);
+    lw_scalar_depthwise_conv3x3_stride2x1_pad1_f32(
+        stride2x1_depthwise_input, unit_depthwise_weights, unit_depthwise_bias,
+        stride2x1_depthwise_output, stride2x1_depthwise_input_dimensions,
+        stride2x1_depthwise_output_dimensions);
+    if (lw_simd_level_is_sse2(simd_level)) {
+        lw_sse2_depthwise_conv3x3_stride2x1_pad1_f32(
+            stride2x1_depthwise_input, unit_depthwise_weights, unit_depthwise_bias,
+            stride2x1_depthwise_simd_output, stride2x1_depthwise_input_dimensions,
+            stride2x1_depthwise_output_dimensions);
+        if (memcmp(stride2x1_depthwise_output, stride2x1_depthwise_simd_output,
+                   sizeof(stride2x1_depthwise_output)) != 0) {
+            fprintf(stderr, "SSE2 stride-2x1 depthwise Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    if (lw_simd_level_is_avx2(simd_level)) {
+        lw_avx2_depthwise_conv3x3_stride2x1_pad1_f32(
+            stride2x1_depthwise_input, unit_depthwise_weights, unit_depthwise_bias,
+            stride2x1_depthwise_simd_output, stride2x1_depthwise_input_dimensions,
+            stride2x1_depthwise_output_dimensions);
+        if (memcmp(stride2x1_depthwise_output, stride2x1_depthwise_simd_output,
+                   sizeof(stride2x1_depthwise_output)) != 0) {
+            fprintf(stderr, "AVX2 stride-2x1 depthwise Conv differs from scalar output\n");
+            return 1;
+        }
+    }
+    status = lw_scalar_conv2d_f32(
+        stride2x1_depthwise_input, unit_depthwise_weights, unit_depthwise_bias, 2u,
+        stride2x1_depthwise_dispatched_output, stride2x1_depthwise_input_dimensions,
+        unit_depthwise_weight_dimensions, stride2x1_depthwise_output_dimensions, normal_kernel,
+        stride2x1_depthwise_strides, unit_dilations, normal_pads, 2u);
+    if (!expect_status("stride-2x1 depthwise conv", status, LW_STATUS_OK) ||
+        memcmp(stride2x1_depthwise_output, stride2x1_depthwise_dispatched_output,
+               sizeof(stride2x1_depthwise_output)) != 0) {
+        fprintf(stderr, "dispatched stride-2x1 depthwise Conv differs from scalar output\n");
+        return 1;
+    }
+    print_values("stride2x1_depthwise_conv", stride2x1_depthwise_output, 114u);
 
     fill_values(unit_depthwise5x5_input, 228u, 29u, 53u, 26, 13.0f);
     fill_values(unit_depthwise5x5_weights, 50u, 31u, 47u, 23, 12.0f);
