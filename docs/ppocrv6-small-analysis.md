@@ -333,13 +333,23 @@ iterations per point:
 | 960 | 1,500.39 ms | 757.00 ms | 217.1 MiB | 506.2 MiB |
 
 This is a local planning snapshot, not a cross-platform performance claim.
-The matching three-iteration REC profile at width 960 spent about 351.49 ms
-in Conv, 60.23 ms in MatMul, 23.62 ms in Erf, and 21.40 ms in Add. Conv node
-11 (regular 3x3, stride 2, input `[1,96,24,480]`, output `[1,48,12,240]`)
-was the largest individual Conv at about 95.73 ms. The next optimization
-should therefore prototype and A/B this exact shape, then run the OCR
-regression gate; it should not be generalized to every 3x3 Conv without a
-reference comparison.
+The matching three-iteration REC profile at width 960 attributed about 351.49
+ms to Conv, 60.23 ms to MatMul, 23.62 ms to Erf, and 21.40 ms to Add. Those
+per-node values include profiling-clock overhead and must not be treated as
+direct production latency. Its largest reported Conv was node 11 (regular 3x3,
+stride 2, input `[1,96,24,480]`, output `[1,48,12,240]`) at 95.73 ms across
+three instrumented runs. The dedicated geometry microbenchmark measured the
+same packed kernel at 8.15 ms versus 9.74 ms for dispatched Conv (1.20x
+speedup) over five runs. Any next optimization therefore needs a full-OCR A/B
+measurement and the OCR regression gate; the profile number alone is not a
+reason to generalize a new 3x3 kernel.
+
+The companion packed 1x1 benchmark is already strong on the same width-960
+geometry: the current AVX2 path measures 27.95x, 29.89x, 33.98x, and 35.25x
+over the scalar packed baseline for the `96x192`, `192x384`, `384x768`, and
+`768x384` shapes respectively. Those results make another generic 1x1 rewrite
+lower priority than an end-to-end measurement of the remaining Conv/activation
+and line-worker costs.
 
 ## Tiny versus Small REC accuracy snapshot
 
