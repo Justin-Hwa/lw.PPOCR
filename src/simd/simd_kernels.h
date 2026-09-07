@@ -19,6 +19,9 @@ void lw_avx2_erf_f32(const float* input, float* output, uint64_t element_count);
 void lw_avx2_gelu_f32(const float* input, float* output, uint64_t element_count);
 void lw_avx2_softmax_contiguous_f32(const float* input, float* output, uint64_t row_count,
                                     uint64_t axis_count);
+int lw_avx2_softmax_argmax_contiguous_f32(const float* input, uint32_t* best_indices,
+                                          float* best_probabilities, uint64_t row_count,
+                                          uint64_t axis_count);
 void lw_wasm128_erf_f32(const float* input, float* output, uint64_t element_count);
 
 void lw_sse2_matmul_shared_f32(const float* input, const float* weights, float* output,

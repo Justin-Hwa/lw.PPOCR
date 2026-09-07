@@ -70,6 +70,9 @@ int main(void) {
     float gelu_temporary[ERF_DENSE_COUNT];
     float softmax_output[24];
     float softmax_in_place[24];
+    uint32_t softmax_best_indices[2];
+    float softmax_best_indices_f32[2];
+    float softmax_best_probabilities[2];
     lw_simd_level simd_level;
     uint32_t index;
     lw_status status;
@@ -331,6 +334,17 @@ int main(void) {
     }
     print_values("softmax_contiguous_axis_in_place", softmax_in_place, 24u);
 
+    status = lw_softmax_argmax_contiguous_f32(softmax_input, softmax_best_indices,
+                                              softmax_best_probabilities, 2u, 12u);
+    if (!expect_status("softmax argmax", status, LW_STATUS_OK)) {
+        return 1;
+    }
+    for (index = 0u; index < 2u; ++index) {
+        softmax_best_indices_f32[index] = (float)softmax_best_indices[index];
+    }
+    print_values("softmax_argmax_indices", softmax_best_indices_f32, 2u);
+    print_values("softmax_argmax_probabilities", softmax_best_probabilities, 2u);
+
     status = lw_scalar_binary_f32(LW_SCALAR_BINARY_ADD, left, 3u, left_dimensions, add_right, 2u,
                                   right_dimensions, binary_output, 3u, invalid_output_dimensions);
     if (!expect_status("invalid broadcast output", status, LW_STATUS_INVALID_SHAPE)) {
@@ -343,6 +357,13 @@ int main(void) {
     }
     status = lw_scalar_softmax_f32(softmax_input, softmax_output, 3u, softmax_dimensions, 3);
     if (!expect_status("invalid softmax axis", status, LW_STATUS_INVALID_SHAPE)) {
+        return 1;
+    }
+    memcpy(softmax_in_place, softmax_input, sizeof(softmax_input));
+    softmax_in_place[7] = NAN;
+    status = lw_softmax_argmax_contiguous_f32(softmax_in_place, softmax_best_indices,
+                                              softmax_best_probabilities, 2u, 12u);
+    if (!expect_status("non-finite softmax argmax", status, LW_STATUS_INVALID_ARGUMENT)) {
         return 1;
     }
     status = lw_scalar_relu_f32(NULL, activation_output, 1u);

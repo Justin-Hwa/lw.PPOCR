@@ -726,20 +726,18 @@ static void profile_fused_gelu(lw_execution_profile* profile, const lw_session* 
     }
 }
 
-static lw_status execute_session_f32(lw_session* session, const float* input,
-                                     uint64_t input_element_count, float* output,
-                                     uint64_t output_element_count, lw_execution_profile* profile,
-                                     lw_error* error) {
+static lw_status execute_session_nodes_f32(lw_session* session, const float* input,
+                                           uint64_t input_element_count, uint32_t node_limit,
+                                           lw_execution_profile* profile, lw_error* error) {
     const lw_model* model;
     uint32_t graph_input_index;
-    uint32_t graph_output_index;
     uint32_t node_index;
     lw_simd_level simd_level;
     lw_status status;
     char message[LW_ERROR_MESSAGE_CAPACITY];
 
-    if (session == NULL || input == NULL || output == NULL) {
-        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT, "session, input, and output are required");
+    if (session == NULL || input == NULL) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT, "session and input are required");
         return LW_STATUS_INVALID_ARGUMENT;
     }
     model = session->model;
@@ -752,16 +750,13 @@ static lw_status execute_session_f32(lw_session* session, const float* input,
         return LW_STATUS_UNSUPPORTED;
     }
     graph_input_index = lwm_read_u32(model->bytes + (size_t)model->input_offset);
-    graph_output_index = lwm_read_u32(model->bytes + (size_t)model->output_offset);
     if (session->tensors[graph_input_index].dtype != LW_DTYPE_F32 ||
-        session->tensors[graph_output_index].dtype != LW_DTYPE_F32 ||
         input_element_count != tensor_element_count(&session->tensors[graph_input_index]) ||
-        output_element_count != tensor_element_count(&session->tensors[graph_output_index])) {
-        lw_set_error(error, LW_STATUS_INVALID_SHAPE,
-                     "input or output element count does not match the session");
+        node_limit > model->info.node_count) {
+        lw_set_error(error, LW_STATUS_INVALID_SHAPE, "input shape or node limit is invalid");
         return LW_STATUS_INVALID_SHAPE;
     }
-    for (node_index = 0u; node_index < model->info.node_count; ++node_index) {
+    for (node_index = 0u; node_index < node_limit; ++node_index) {
         const uint8_t* node =
             model->bytes + (size_t)model->node_offset + (size_t)node_index * LWM_V0_NODE_SIZE;
         uint32_t operation = (uint32_t)lwm_read_u16(node);
@@ -830,8 +825,171 @@ static lw_status execute_session_f32(lw_session* session, const float* input,
             return status;
         }
     }
+    lw_set_error(error, LW_STATUS_OK, "");
+    return LW_STATUS_OK;
+}
+
+static lw_status execute_session_f32(lw_session* session, const float* input,
+                                     uint64_t input_element_count, float* output,
+                                     uint64_t output_element_count, lw_execution_profile* profile,
+                                     lw_error* error) {
+    uint32_t graph_output_index;
+    lw_status status;
+    if (session == NULL || input == NULL || output == NULL) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT, "session, input, and output are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    graph_output_index = lwm_read_u32(session->model->bytes +
+                                      (size_t)session->model->output_offset);
+    if (session->tensors[graph_output_index].dtype != LW_DTYPE_F32 ||
+        output_element_count != tensor_element_count(&session->tensors[graph_output_index])) {
+        lw_set_error(error, LW_STATUS_INVALID_SHAPE,
+                     "output element count does not match the session");
+        return LW_STATUS_INVALID_SHAPE;
+    }
+    status = execute_session_nodes_f32(session, input, input_element_count,
+                                       session->model->info.node_count, profile, error);
+    if (status != LW_STATUS_OK) {
+        return status;
+    }
     memcpy(output, tensor_output_data(session, graph_output_index),
            (size_t)session->tensors[graph_output_index].byte_size);
+    lw_set_error(error, LW_STATUS_OK, "");
+    return LW_STATUS_OK;
+}
+
+static int ctc_greedy_tail(const lw_session* session, uint32_t time_steps,
+                           uint32_t class_count, uint32_t* logits_index) {
+    const lw_model* model;
+    const uint8_t* node;
+    const uint8_t* params;
+    const lw_runtime_tensor* logits;
+    const lw_runtime_tensor* output;
+    uint32_t graph_output_index;
+    uint32_t input_index;
+    uint32_t output_index;
+    uint32_t index;
+    int32_t axis;
+    if (session == NULL || time_steps == 0u || class_count == 0u) {
+        return 0;
+    }
+    model = session->model;
+    if (model->info.input_count != 1u || model->info.output_count != 1u ||
+        model->info.node_count == 0u) {
+        return 0;
+    }
+    /* This is deliberately a structural check rather than a model-name
+     * special case. Unsupported or multi-output graphs retain the generic
+     * executor and complete probability tensor. */
+    node = model->bytes + (size_t)model->node_offset +
+           (size_t)(model->info.node_count - 1u) * LWM_V0_NODE_SIZE;
+    if (lwm_read_u16(node) != LW_OP_SOFTMAX || lwm_read_u16(node + 2u) != 1u ||
+        lwm_read_u16(node + 4u) != 1u) {
+        return 0;
+    }
+    input_index = lwm_read_u32(node + 8u);
+    output_index = lwm_read_u32(node + 40u);
+    graph_output_index = lwm_read_u32(model->bytes + (size_t)model->output_offset);
+    if (output_index != graph_output_index) {
+        return 0;
+    }
+    logits = &session->tensors[input_index];
+    output = &session->tensors[output_index];
+    if (logits->dtype != LW_DTYPE_F32 || output->dtype != LW_DTYPE_F32 || logits->rank < 2u ||
+        logits->rank != output->rank || logits->last_use_node != (int32_t)(model->info.node_count - 1u) ||
+        tensor_element_count(output) != (uint64_t)time_steps * class_count ||
+        logits->dimensions[logits->rank - 1u] != (int32_t)class_count) {
+        return 0;
+    }
+    for (index = 0u; index < logits->rank; ++index) {
+        if (logits->dimensions[index] != output->dimensions[index]) {
+            return 0;
+        }
+    }
+    params = model->bytes + (size_t)lwm_read_u64(node + 56u);
+    axis = lwm_read_i32(params + 4u);
+    if (axis < 0) {
+        axis += (int32_t)logits->rank;
+    }
+    if (axis != (int32_t)logits->rank - 1) {
+        return 0;
+    }
+    if (logits_index != NULL) {
+        *logits_index = input_index;
+    }
+    return 1;
+}
+
+int lw_session_supports_ctc_greedy_f32(const lw_session* session, uint32_t time_steps,
+                                       uint32_t class_count) {
+    return ctc_greedy_tail(session, time_steps, class_count, NULL);
+}
+
+lw_status lw_execute_session_f32_ctc_greedy(
+    lw_session* session, const float* input, uint64_t input_element_count,
+    uint32_t* best_indices, float* best_probabilities, uint32_t time_steps,
+    uint32_t class_count, lw_execution_profile* profile, lw_error* error) {
+    uint32_t logits_index;
+    uint32_t softmax_node_index;
+    uint64_t started = 0u;
+    uint64_t elapsed = 0u;
+    lw_status status;
+    if (session == NULL || input == NULL || best_indices == NULL || best_probabilities == NULL) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT,
+                     "session, input, and CTC greedy outputs are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    if (profile != NULL &&
+        (profile->struct_size != sizeof(*profile) || profile->reserved != 0u ||
+         profile->clock == NULL)) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT,
+                     "an initialized execution profile and clock are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    if (!ctc_greedy_tail(session, time_steps, class_count, &logits_index)) {
+        lw_set_error(error, LW_STATUS_UNSUPPORTED,
+                     "session output is not a supported terminal CTC Softmax");
+        return LW_STATUS_UNSUPPORTED;
+    }
+    softmax_node_index = session->model->info.node_count - 1u;
+    status = execute_session_nodes_f32(session, input, input_element_count, softmax_node_index,
+                                       profile, error);
+    if (status != LW_STATUS_OK) {
+        return status;
+    }
+    if (profile != NULL) {
+        started = profile->clock(profile->clock_context);
+    }
+    status = lw_softmax_argmax_contiguous_f32(
+        tensor_input_data(session, logits_index,
+                          lwm_read_u32(session->model->bytes +
+                                       (size_t)session->model->input_offset),
+                          input),
+        best_indices, best_probabilities, time_steps, class_count);
+    if (profile != NULL) {
+        uint64_t finished = profile->clock(profile->clock_context);
+        if (finished >= started) {
+            elapsed = finished - started;
+        }
+        if (elapsed == 0u) {
+            elapsed = 1u;
+        }
+        if (profile->operator_nanoseconds[LW_OP_SOFTMAX] <= UINT64_MAX - elapsed &&
+            profile->operator_invocations[LW_OP_SOFTMAX] != UINT64_MAX) {
+            profile->operator_nanoseconds[LW_OP_SOFTMAX] += elapsed;
+            ++profile->operator_invocations[LW_OP_SOFTMAX];
+        }
+        if (softmax_node_index < LW_EXECUTION_PROFILE_NODE_CAPACITY &&
+            profile->node_nanoseconds[softmax_node_index] <= UINT64_MAX - elapsed &&
+            profile->node_invocations[softmax_node_index] != UINT64_MAX) {
+            profile->node_nanoseconds[softmax_node_index] += elapsed;
+            ++profile->node_invocations[softmax_node_index];
+        }
+    }
+    if (status != LW_STATUS_OK) {
+        lw_set_error(error, status, "terminal CTC logits contain invalid values");
+        return status;
+    }
     lw_set_error(error, LW_STATUS_OK, "");
     return LW_STATUS_OK;
 }

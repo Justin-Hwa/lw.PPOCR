@@ -115,6 +115,34 @@ adaptive width, that session may prepare a width-specific constant arena locally
 A future compiled-model cache can deduplicate those width variants, but that is
 separate from this ABI-neutral worker-pool change.
 
+## Terminal CTC greedy result
+
+Official REC graphs end in a last-axis Softmax whose complete vocabulary tensor
+is consumed only by greedy CTC decoding. The recognizer now detects that exact
+graph contract and executes a terminal CTC path that emits only the best class
+and its Softmax probability for each time step. It avoids dividing and copying
+the complete probability tensor and replaces the recognizer-owned
+`time_steps * class_count` float buffer with one `uint32_t` and one float per
+time step. Models without this terminal shape automatically retain the generic
+executor and full probability buffer. The public C ABI is unchanged.
+
+A same-host A/B used binaries built from the same commit before and after this
+change, the bundled 500x500/16-line Tiny fixture, fixed REC width 960, two
+warm-ups, and 30 measured calls. Both variants returned the same 16 lines; the
+REC reference, Golden Corpus, full-OCR reference, and profiler coverage tests
+also remained unchanged.
+
+| Workers | Previous mean | CTC greedy mean | Reduction | Previous peak RSS | CTC greedy peak RSS | Peak reduction |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 354.44 ms | 349.28 ms | 1.45% | 92.72 MiB | 87.00 MiB | 5.71 MiB |
+| 4 | 156.98 ms | 150.51 ms | 4.12% | 167.26 MiB | 147.94 MiB | 19.32 MiB |
+
+Small and Medium REC were additionally smoke-tested at width 960 with the same
+crop and their shared dictionary; both returned `纯臻营养护发素`. The optimized
+terminal work is still attributed to the semantic Softmax node in execution
+profiles, so existing per-node and per-operator report contracts remain stable.
+These measurements are local engineering evidence, not portable release gates.
+
 ## Local baseline
 
 The following is one local measurement, not a general performance promise:

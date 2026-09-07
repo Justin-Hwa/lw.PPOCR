@@ -103,6 +103,10 @@ def expected_results() -> dict[str, np.ndarray]:
         "softmax_in_place": softmax.ravel(),
         "softmax_contiguous_axis": softmax_contiguous.ravel(),
         "softmax_contiguous_axis_in_place": softmax_contiguous.ravel(),
+        "softmax_argmax_indices": np.argmax(softmax_contiguous_input, axis=1).astype(
+            np.float32
+        ),
+        "softmax_argmax_probabilities": np.max(softmax_contiguous, axis=1),
     }
 
 

@@ -156,3 +156,80 @@ void lw_avx2_softmax_contiguous_f32(const float* input, float* output, uint64_t 
     }
 #endif
 }
+
+#if LW_COMPILES_AVX2_SOFTMAX && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,no-fma")))
+#endif
+int lw_avx2_softmax_argmax_contiguous_f32(const float* input, uint32_t* best_indices,
+                                          float* best_probabilities, uint64_t row_count,
+                                          uint64_t axis_count) {
+#if LW_COMPILES_AVX2_SOFTMAX
+    uint64_t row;
+    for (row = 0u; row < row_count; ++row) {
+        const float* input_row = input + (size_t)(row * axis_count);
+        uint32_t best_index = 0u;
+        float maximum = input_row[0];
+        float sum = 0.0f;
+        uint64_t index;
+        __m256 maximum_vector;
+        if (!isfinite(maximum)) {
+            return 0;
+        }
+        for (index = 1u; index < axis_count; ++index) {
+            float value = input_row[(size_t)index];
+            if (!isfinite(value)) {
+                return 0;
+            }
+            if (value > maximum) {
+                maximum = value;
+                best_index = (uint32_t)index;
+            }
+        }
+        maximum_vector = _mm256_set1_ps(maximum);
+        for (index = 0u; index + 8u <= axis_count; index += 8u) {
+            float lanes[8];
+            __m256 values = exp_approximation_f32(
+                _mm256_sub_ps(_mm256_loadu_ps(input_row + (size_t)index), maximum_vector));
+            uint32_t lane;
+            _mm256_storeu_ps(lanes, values);
+            for (lane = 0u; lane < 8u; ++lane) {
+                sum += lanes[lane];
+            }
+        }
+        for (; index < axis_count; ++index) {
+            sum += expf(input_row[(size_t)index] - maximum);
+        }
+        best_indices[(size_t)row] = best_index;
+        best_probabilities[(size_t)row] = 1.0f / sum;
+    }
+    return 1;
+#else
+    uint64_t row;
+    for (row = 0u; row < row_count; ++row) {
+        const float* input_row = input + (size_t)(row * axis_count);
+        uint32_t best_index = 0u;
+        float maximum = input_row[0];
+        float sum = 0.0f;
+        uint64_t index;
+        if (!isfinite(maximum)) {
+            return 0;
+        }
+        for (index = 1u; index < axis_count; ++index) {
+            float value = input_row[(size_t)index];
+            if (!isfinite(value)) {
+                return 0;
+            }
+            if (value > maximum) {
+                maximum = value;
+                best_index = (uint32_t)index;
+            }
+        }
+        for (index = 0u; index < axis_count; ++index) {
+            sum += expf(input_row[(size_t)index] - maximum);
+        }
+        best_indices[(size_t)row] = best_index;
+        best_probabilities[(size_t)row] = 1.0f / sum;
+    }
+    return 1;
+#endif
+}

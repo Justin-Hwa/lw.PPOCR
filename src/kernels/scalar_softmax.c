@@ -111,3 +111,49 @@ lw_status lw_scalar_softmax_f32(const float* input, float* output, uint32_t rank
     }
     return LW_STATUS_OK;
 }
+
+lw_status lw_softmax_argmax_contiguous_f32(const float* input, uint32_t* best_indices,
+                                           float* best_probabilities, uint64_t row_count,
+                                           uint64_t axis_count) {
+    uint64_t row;
+    if (input == NULL || best_indices == NULL || best_probabilities == NULL || row_count == 0u ||
+        axis_count == 0u || axis_count > UINT32_MAX ||
+        row_count > (uint64_t)(SIZE_MAX / sizeof(*best_indices)) ||
+        row_count > (uint64_t)(SIZE_MAX / sizeof(*best_probabilities)) ||
+        row_count > UINT64_MAX / axis_count ||
+        row_count * axis_count > (uint64_t)(SIZE_MAX / sizeof(float))) {
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    if (axis_count >= 256u && lw_simd_level_is_avx2(lw_detect_simd_level())) {
+        return lw_avx2_softmax_argmax_contiguous_f32(input, best_indices, best_probabilities,
+                                                     row_count, axis_count)
+                   ? LW_STATUS_OK
+                   : LW_STATUS_INVALID_ARGUMENT;
+    }
+    for (row = 0u; row < row_count; ++row) {
+        const float* input_row = input + (size_t)(row * axis_count);
+        uint32_t best_index = 0u;
+        float maximum = input_row[0];
+        float sum = 0.0f;
+        uint64_t index;
+        if (!isfinite(maximum)) {
+            return LW_STATUS_INVALID_ARGUMENT;
+        }
+        for (index = 1u; index < axis_count; ++index) {
+            float value = input_row[(size_t)index];
+            if (!isfinite(value)) {
+                return LW_STATUS_INVALID_ARGUMENT;
+            }
+            if (value > maximum) {
+                maximum = value;
+                best_index = (uint32_t)index;
+            }
+        }
+        for (index = 0u; index < axis_count; ++index) {
+            sum += expf(input_row[(size_t)index] - maximum);
+        }
+        best_indices[(size_t)row] = best_index;
+        best_probabilities[(size_t)row] = 1.0f / sum;
+    }
+    return LW_STATUS_OK;
+}

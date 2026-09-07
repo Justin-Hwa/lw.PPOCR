@@ -45,6 +45,17 @@ lw_status lw_rec_ctc_decode_known_capacity_f32(const lw_rec_dictionary* dictiona
                                                char* text_utf8, uint64_t text_capacity,
                                                uint64_t* required_capacity, float* score,
                                                uint32_t* emitted_count, lw_error* error);
+lw_status lw_rec_ctc_decode_greedy_f32(const lw_rec_dictionary* dictionary,
+                                       const uint32_t* best_indices,
+                                       const float* best_probabilities, uint32_t time_steps,
+                                       uint32_t class_count, char* text_utf8,
+                                       uint64_t text_capacity, uint64_t* required_capacity,
+                                       float* score, uint32_t* emitted_count, lw_error* error);
+lw_status lw_rec_ctc_decode_greedy_known_capacity_f32(
+    const lw_rec_dictionary* dictionary, const uint32_t* best_indices,
+    const float* best_probabilities, uint32_t time_steps, uint32_t class_count,
+    char* text_utf8, uint64_t text_capacity, uint64_t* required_capacity, float* score,
+    uint32_t* emitted_count, lw_error* error);
 
 lw_status lw_recognizer_clone(const lw_recognizer* source, lw_recognizer** out_recognizer,
                               lw_error* error);

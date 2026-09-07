@@ -45,4 +45,11 @@ lw_status lw_execute_session_f32_profiled(lw_session* session, const float* inpu
                                           uint64_t output_element_count,
                                           lw_execution_profile* profile, lw_error* error);
 
+int lw_session_supports_ctc_greedy_f32(const lw_session* session, uint32_t time_steps,
+                                       uint32_t class_count);
+lw_status lw_execute_session_f32_ctc_greedy(
+    lw_session* session, const float* input, uint64_t input_element_count,
+    uint32_t* best_indices, float* best_probabilities, uint32_t time_steps,
+    uint32_t class_count, lw_execution_profile* profile, lw_error* error);
+
 #endif

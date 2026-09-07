@@ -24,11 +24,15 @@ struct lw_recognizer {
     lw_rec_dictionary* dictionary;
     float* input;
     float* probabilities;
+    uint32_t* best_indices;
+    float* best_probabilities;
     uint64_t input_element_count;
     uint64_t probability_element_count;
     lw_session* cached_session;
     float* cached_input;
     float* cached_probabilities;
+    uint32_t* cached_best_indices;
+    float* cached_best_probabilities;
     uint64_t cached_input_element_count;
     uint64_t cached_probability_element_count;
     uint32_t cached_target_width;
@@ -42,12 +46,16 @@ struct lw_recognizer {
 };
 
 static void release_cached_session(lw_recognizer* recognizer) {
+    free(recognizer->cached_best_probabilities);
+    free(recognizer->cached_best_indices);
     free(recognizer->cached_probabilities);
     free(recognizer->cached_input);
     lw_session_free(recognizer->cached_session);
     recognizer->cached_session = NULL;
     recognizer->cached_input = NULL;
     recognizer->cached_probabilities = NULL;
+    recognizer->cached_best_indices = NULL;
+    recognizer->cached_best_probabilities = NULL;
     recognizer->cached_input_element_count = 0u;
     recognizer->cached_probability_element_count = 0u;
     recognizer->cached_target_width = 0u;
@@ -58,6 +66,8 @@ static void activate_cached_session(lw_recognizer* recognizer) {
     lw_session* session = recognizer->session;
     float* input = recognizer->input;
     float* probabilities = recognizer->probabilities;
+    uint32_t* best_indices = recognizer->best_indices;
+    float* best_probabilities = recognizer->best_probabilities;
     uint64_t input_element_count = recognizer->input_element_count;
     uint64_t probability_element_count = recognizer->probability_element_count;
     uint32_t target_width = recognizer->current_target_width;
@@ -66,6 +76,8 @@ static void activate_cached_session(lw_recognizer* recognizer) {
     recognizer->session = recognizer->cached_session;
     recognizer->input = recognizer->cached_input;
     recognizer->probabilities = recognizer->cached_probabilities;
+    recognizer->best_indices = recognizer->cached_best_indices;
+    recognizer->best_probabilities = recognizer->cached_best_probabilities;
     recognizer->input_element_count = recognizer->cached_input_element_count;
     recognizer->probability_element_count = recognizer->cached_probability_element_count;
     recognizer->current_target_width = recognizer->cached_target_width;
@@ -74,6 +86,8 @@ static void activate_cached_session(lw_recognizer* recognizer) {
     recognizer->cached_session = session;
     recognizer->cached_input = input;
     recognizer->cached_probabilities = probabilities;
+    recognizer->cached_best_indices = best_indices;
+    recognizer->cached_best_probabilities = best_probabilities;
     recognizer->cached_input_element_count = input_element_count;
     recognizer->cached_probability_element_count = probability_element_count;
     recognizer->cached_target_width = target_width;
@@ -165,8 +179,13 @@ static lw_status configure_session(lw_recognizer* recognizer, uint32_t target_wi
     lw_session* session = NULL;
     float* input = NULL;
     float* probabilities = NULL;
+    uint32_t* best_indices = NULL;
+    float* best_probabilities = NULL;
     uint64_t input_element_count;
     uint64_t probability_element_count;
+    uint32_t time_steps;
+    uint32_t class_count;
+    int use_ctc_greedy;
     lw_status status;
 
     if (recognizer->cached_session != NULL && recognizer->cached_target_width == target_width) {
@@ -217,15 +236,31 @@ static lw_status configure_session(lw_recognizer* recognizer, uint32_t target_wi
     input_element_count = (uint64_t)3u * LW_REC_INPUT_HEIGHT * target_width;
     probability_element_count =
         (uint64_t)(uint32_t)output_desc.dimensions[1] * (uint32_t)output_desc.dimensions[2];
+    time_steps = (uint32_t)output_desc.dimensions[1];
+    class_count = (uint32_t)output_desc.dimensions[2];
+    /* A terminal, last-axis Softmax can be consumed as greedy CTC classes.
+     * Keep the full probability buffer only for models that need the generic
+     * graph-output contract; official REC models use two values per step. */
+    use_ctc_greedy = lw_session_supports_ctc_greedy_f32(session, time_steps, class_count);
     if (input_element_count > SIZE_MAX / sizeof(*input) ||
-        probability_element_count > SIZE_MAX / sizeof(*probabilities)) {
+        probability_element_count > SIZE_MAX / sizeof(*probabilities) ||
+        (uint64_t)time_steps > SIZE_MAX / sizeof(*best_indices) ||
+        (uint64_t)time_steps > SIZE_MAX / sizeof(*best_probabilities)) {
         lw_session_free(session);
         lw_set_error(error, LW_STATUS_OUT_OF_BOUNDS, "recognizer buffer size overflows");
         return LW_STATUS_OUT_OF_BOUNDS;
     }
     input = (float*)malloc((size_t)input_element_count * sizeof(*input));
-    probabilities = (float*)malloc((size_t)probability_element_count * sizeof(*probabilities));
-    if (input == NULL || probabilities == NULL) {
+    if (use_ctc_greedy) {
+        best_indices = (uint32_t*)malloc((size_t)time_steps * sizeof(*best_indices));
+        best_probabilities = (float*)malloc((size_t)time_steps * sizeof(*best_probabilities));
+    } else {
+        probabilities = (float*)malloc((size_t)probability_element_count * sizeof(*probabilities));
+    }
+    if (input == NULL || (use_ctc_greedy && (best_indices == NULL || best_probabilities == NULL)) ||
+        (!use_ctc_greedy && probabilities == NULL)) {
+        free(best_probabilities);
+        free(best_indices);
         free(probabilities);
         free(input);
         lw_session_free(session);
@@ -236,6 +271,8 @@ static lw_status configure_session(lw_recognizer* recognizer, uint32_t target_wi
     lw_session_info_init(&session_info);
     status = lw_session_get_info(session, &session_info);
     if (status != LW_STATUS_OK) {
+        free(best_probabilities);
+        free(best_indices);
         free(probabilities);
         free(input);
         lw_session_free(session);
@@ -249,6 +286,8 @@ static lw_status configure_session(lw_recognizer* recognizer, uint32_t target_wi
     recognizer->cached_session = recognizer->session;
     recognizer->cached_input = recognizer->input;
     recognizer->cached_probabilities = recognizer->probabilities;
+    recognizer->cached_best_indices = recognizer->best_indices;
+    recognizer->cached_best_probabilities = recognizer->best_probabilities;
     recognizer->cached_input_element_count = recognizer->input_element_count;
     recognizer->cached_probability_element_count = recognizer->probability_element_count;
     recognizer->cached_target_width = recognizer->current_target_width;
@@ -256,10 +295,12 @@ static lw_status configure_session(lw_recognizer* recognizer, uint32_t target_wi
     recognizer->session = session;
     recognizer->input = input;
     recognizer->probabilities = probabilities;
+    recognizer->best_indices = best_indices;
+    recognizer->best_probabilities = best_probabilities;
     recognizer->input_element_count = input_element_count;
     recognizer->probability_element_count = probability_element_count;
     recognizer->current_target_width = target_width;
-    recognizer->current_time_steps = (uint32_t)output_desc.dimensions[1];
+    recognizer->current_time_steps = time_steps;
     if (configured_info != NULL) {
         *configured_info = session_info;
     }
@@ -431,6 +472,8 @@ void lw_recognizer_free(lw_recognizer* recognizer) {
     if (recognizer == NULL) {
         return;
     }
+    free(recognizer->best_probabilities);
+    free(recognizer->best_indices);
     free(recognizer->probabilities);
     free(recognizer->input);
     lw_session_free(recognizer->session);
@@ -498,21 +541,44 @@ static lw_status recognizer_recognize_bgr_u8_impl(lw_recognizer* recognizer, con
     lw_pipeline_profile_add_elapsed(profile == NULL ? NULL : &profile->preprocess_nanoseconds,
                                     started, profile);
     started = lw_pipeline_profile_now(profile);
-    status = profile == NULL
-                 ? lw_execute_session_f32(
-                       recognizer->session, recognizer->input, recognizer->input_element_count,
-                       recognizer->probabilities, recognizer->probability_element_count, error)
-                 : lw_execute_session_f32_profiled(
-                       recognizer->session, recognizer->input, recognizer->input_element_count,
-                       recognizer->probabilities, recognizer->probability_element_count,
-                       &profile->execution, error);
+    if (recognizer->best_indices != NULL) {
+        status = lw_execute_session_f32_ctc_greedy(
+            recognizer->session, recognizer->input, recognizer->input_element_count,
+            recognizer->best_indices, recognizer->best_probabilities,
+            recognizer->current_time_steps, recognizer->info.class_count,
+            profile == NULL ? NULL : &profile->execution, error);
+    } else {
+        status = profile == NULL
+                     ? lw_execute_session_f32(
+                           recognizer->session, recognizer->input,
+                           recognizer->input_element_count, recognizer->probabilities,
+                           recognizer->probability_element_count, error)
+                     : lw_execute_session_f32_profiled(
+                           recognizer->session, recognizer->input,
+                           recognizer->input_element_count, recognizer->probabilities,
+                           recognizer->probability_element_count, &profile->execution, error);
+    }
     lw_pipeline_profile_add_elapsed(profile == NULL ? NULL : &profile->graph_nanoseconds, started,
                                     profile);
     if (status != LW_STATUS_OK) {
         return status;
     }
     started = lw_pipeline_profile_now(profile);
-    if (text_utf8 != NULL && text_capacity >= recognizer->info.max_text_capacity) {
+    if (recognizer->best_indices != NULL) {
+        if (text_utf8 != NULL && text_capacity >= recognizer->info.max_text_capacity) {
+            status = lw_rec_ctc_decode_greedy_known_capacity_f32(
+                recognizer->dictionary, recognizer->best_indices,
+                recognizer->best_probabilities, recognizer->current_time_steps,
+                recognizer->info.class_count, text_utf8, text_capacity, &required_capacity,
+                &score, &emitted_count, error);
+        } else {
+            status = lw_rec_ctc_decode_greedy_f32(
+                recognizer->dictionary, recognizer->best_indices,
+                recognizer->best_probabilities, recognizer->current_time_steps,
+                recognizer->info.class_count, text_utf8, text_capacity, &required_capacity,
+                &score, &emitted_count, error);
+        }
+    } else if (text_utf8 != NULL && text_capacity >= recognizer->info.max_text_capacity) {
         status = lw_rec_ctc_decode_known_capacity_f32(
             recognizer->dictionary, recognizer->probabilities,
             recognizer->probability_element_count, recognizer->current_time_steps,

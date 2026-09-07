@@ -327,6 +327,59 @@ static lw_status decode_pass(const lw_rec_dictionary* dictionary, const float* p
     return LW_STATUS_OK;
 }
 
+static lw_status decode_greedy_pass(const lw_rec_dictionary* dictionary,
+                                    const uint32_t* best_indices,
+                                    const float* best_probabilities, uint32_t time_steps,
+                                    uint32_t class_count, char* text_utf8,
+                                    uint64_t text_capacity, uint64_t* text_bytes, float* score,
+                                    uint32_t* emitted_count) {
+    uint64_t bytes = 0u;
+    double score_sum = 0.0;
+    uint32_t emitted = 0u;
+    uint32_t previous = 0u;
+    uint32_t step;
+    for (step = 0u; step < time_steps; ++step) {
+        uint32_t best_index = best_indices[step];
+        float best_value = best_probabilities[step];
+        if (best_index >= class_count || !isfinite(best_value)) {
+            return LW_STATUS_INVALID_ARGUMENT;
+        }
+        if (best_index != 0u && (step == 0u || best_index != previous)) {
+            const uint8_t* label;
+            uint32_t label_length;
+            if (best_index == dictionary->entry_count + 1u) {
+                static const uint8_t space = (uint8_t)' ';
+                label = &space;
+                label_length = 1u;
+            } else {
+                uint32_t dictionary_index = best_index - 1u;
+                label = dictionary->bytes + dictionary->offsets[dictionary_index];
+                label_length = dictionary->lengths[dictionary_index];
+            }
+            if (bytes > UINT64_MAX - label_length) {
+                return LW_STATUS_OUT_OF_BOUNDS;
+            }
+            if (text_utf8 != NULL) {
+                if (bytes >= text_capacity || label_length >= text_capacity - bytes) {
+                    return LW_STATUS_OUT_OF_BOUNDS;
+                }
+                memcpy(text_utf8 + (size_t)bytes, label, label_length);
+            }
+            bytes += label_length;
+            score_sum += best_value;
+            ++emitted;
+        }
+        previous = best_index;
+    }
+    if (text_utf8 != NULL) {
+        text_utf8[(size_t)bytes] = '\0';
+    }
+    *text_bytes = bytes;
+    *score = emitted == 0u ? 0.0f : (float)(score_sum / emitted);
+    *emitted_count = emitted;
+    return LW_STATUS_OK;
+}
+
 lw_status lw_rec_ctc_decode_f32(const lw_rec_dictionary* dictionary, const float* probabilities,
                                 uint64_t probability_element_count, uint32_t time_steps,
                                 uint32_t class_count, char* text_utf8, uint64_t text_capacity,
@@ -436,6 +489,114 @@ lw_status lw_rec_ctc_decode_known_capacity_f32(const lw_rec_dictionary* dictiona
                      status == LW_STATUS_OUT_OF_BOUNDS
                          ? "CTC text buffer is too small"
                          : "CTC probabilities contain invalid values");
+        return status;
+    }
+    if (text_bytes >= SIZE_MAX) {
+        lw_set_error(error, LW_STATUS_OUT_OF_BOUNDS, "CTC text capacity overflows");
+        return LW_STATUS_OUT_OF_BOUNDS;
+    }
+    *required_capacity = text_bytes + 1u;
+    *score = decoded_score;
+    *emitted_count = decoded_count;
+    lw_set_error(error, LW_STATUS_OK, "");
+    return LW_STATUS_OK;
+}
+
+
+lw_status lw_rec_ctc_decode_greedy_f32(const lw_rec_dictionary* dictionary,
+                                       const uint32_t* best_indices,
+                                       const float* best_probabilities, uint32_t time_steps,
+                                       uint32_t class_count, char* text_utf8,
+                                       uint64_t text_capacity, uint64_t* required_capacity,
+                                       float* score, uint32_t* emitted_count, lw_error* error) {
+    uint64_t text_bytes;
+    float decoded_score;
+    uint32_t decoded_count;
+    lw_status status;
+    if (required_capacity != NULL) {
+        *required_capacity = 0u;
+    }
+    if (score != NULL) {
+        *score = 0.0f;
+    }
+    if (emitted_count != NULL) {
+        *emitted_count = 0u;
+    }
+    if (dictionary == NULL || best_indices == NULL || best_probabilities == NULL ||
+        required_capacity == NULL || score == NULL || emitted_count == NULL ||
+        time_steps == 0u || class_count != dictionary->entry_count + 2u ||
+        (text_utf8 == NULL && text_capacity != 0u)) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT,
+                     "dictionary, greedy classes, and decode outputs are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    status = decode_greedy_pass(dictionary, best_indices, best_probabilities, time_steps,
+                                class_count, NULL, 0u, &text_bytes, &decoded_score,
+                                &decoded_count);
+    if (status != LW_STATUS_OK) {
+        lw_set_error(error, status, "CTC greedy outputs contain invalid values");
+        return status;
+    }
+    if (text_bytes >= SIZE_MAX) {
+        lw_set_error(error, LW_STATUS_OUT_OF_BOUNDS, "CTC text capacity overflows");
+        return LW_STATUS_OUT_OF_BOUNDS;
+    }
+    *required_capacity = text_bytes + 1u;
+    *score = decoded_score;
+    *emitted_count = decoded_count;
+    if (text_utf8 == NULL) {
+        lw_set_error(error, LW_STATUS_OK, "");
+        return LW_STATUS_OK;
+    }
+    if (text_capacity < *required_capacity) {
+        lw_set_error(error, LW_STATUS_OUT_OF_BOUNDS, "CTC text buffer is too small");
+        return LW_STATUS_OUT_OF_BOUNDS;
+    }
+    status = decode_greedy_pass(dictionary, best_indices, best_probabilities, time_steps,
+                                class_count, text_utf8, text_capacity, &text_bytes,
+                                &decoded_score, &decoded_count);
+    if (status != LW_STATUS_OK) {
+        lw_set_error(error, status, "CTC greedy decoding failed");
+        return status;
+    }
+    lw_set_error(error, LW_STATUS_OK, "");
+    return LW_STATUS_OK;
+}
+
+lw_status lw_rec_ctc_decode_greedy_known_capacity_f32(
+    const lw_rec_dictionary* dictionary, const uint32_t* best_indices,
+    const float* best_probabilities, uint32_t time_steps, uint32_t class_count,
+    char* text_utf8, uint64_t text_capacity, uint64_t* required_capacity, float* score,
+    uint32_t* emitted_count, lw_error* error) {
+    uint64_t text_bytes = 0u;
+    float decoded_score = 0.0f;
+    uint32_t decoded_count = 0u;
+    lw_status status;
+    if (required_capacity != NULL) {
+        *required_capacity = 0u;
+    }
+    if (score != NULL) {
+        *score = 0.0f;
+    }
+    if (emitted_count != NULL) {
+        *emitted_count = 0u;
+    }
+    if (dictionary == NULL || best_indices == NULL || best_probabilities == NULL ||
+        text_utf8 == NULL || text_capacity == 0u || required_capacity == NULL ||
+        score == NULL || emitted_count == NULL || time_steps == 0u ||
+        class_count != dictionary->entry_count + 2u) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT,
+                     "known-capacity CTC greedy decode inputs are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    status = decode_greedy_pass(dictionary, best_indices, best_probabilities, time_steps,
+                                class_count, text_utf8, text_capacity, &text_bytes,
+                                &decoded_score, &decoded_count);
+    if (status != LW_STATUS_OK) {
+        lw_set_error(error, status,
+                     status == LW_STATUS_OUT_OF_BOUNDS
+                         ? "CTC text buffer is too small"
+                         : "CTC greedy outputs contain invalid values");
         return status;
     }
     if (text_bytes >= SIZE_MAX) {
