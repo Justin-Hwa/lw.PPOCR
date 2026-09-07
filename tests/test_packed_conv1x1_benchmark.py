@@ -9,38 +9,42 @@ import unittest
 
 
 class PackedConv1x1BenchmarkTest(unittest.TestCase):
-    def test_small_rec_geometries_are_correct_and_machine_readable(self) -> None:
-        completed = subprocess.run(
-            [ARGS.driver, "320", "1"],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        report = json.loads(completed.stdout)
-        self.assertEqual(report["schema_version"], 1)
-        self.assertEqual(report["target_width"], 320)
-        self.assertEqual(report["iterations"], 1)
-        self.assertTrue(report["backend"])
-        cases = report["cases"]
-        self.assertEqual(
-            [(item["input_channels"], item["output_channels"], item["height"], item["width"])
-             for item in cases],
-            [
-                (96, 192, 12, 80),
-                (192, 384, 6, 80),
-                (384, 768, 3, 80),
-                (768, 384, 3, 80),
-            ],
-        )
-        for item in cases:
-            for field in ("scalar_ms", "dispatched_ms", "speedup"):
-                self.assertTrue(math.isfinite(item[field]), (field, item))
-                self.assertGreater(item[field], 0.0, (field, item))
-            self.assertRegex(item["checksum"], re.compile(r"^0x[0-9a-f]{16}$"))
+    def test_rec_and_medium_geometries_are_correct_and_machine_readable(self) -> None:
+        for target_width, expected_width in ((320, 80), (960, 240)):
+            completed = subprocess.run(
+                [ARGS.driver, str(target_width), "1"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            report = json.loads(completed.stdout)
+            self.assertEqual(report["schema_version"], 1)
+            self.assertEqual(report["target_width"], target_width)
+            self.assertEqual(report["iterations"], 1)
+            self.assertTrue(report["backend"])
+            cases = report["cases"]
+            self.assertEqual(
+                [(item["input_channels"], item["output_channels"], item["height"], item["width"])
+                 for item in cases],
+                [
+                    (96, 192, 12, expected_width),
+                    (192, 384, 6, expected_width),
+                    (384, 768, 3, expected_width),
+                    (768, 384, 3, expected_width),
+                    (512, 1024, 6, expected_width),
+                    (1024, 512, 6, expected_width),
+                    (1536, 768, 3, expected_width),
+                ],
+            )
+            for item in cases:
+                for field in ("scalar_ms", "dispatched_ms", "speedup"):
+                    self.assertTrue(math.isfinite(item[field]), (field, item))
+                    self.assertGreater(item[field], 0.0, (field, item))
+                self.assertRegex(item["checksum"], re.compile(r"^0x[0-9a-f]{16}$"))
 
 
 def parse_args() -> argparse.Namespace:

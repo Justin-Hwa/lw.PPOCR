@@ -309,3 +309,55 @@ nodes, rather than more width-specialization in the converter.
 
 The sweep is reproducible with `tools/benchmark_ocr_widths.py`; it records the
 benchmark JSON instead of relying on copied console output.
+
+## Medium REC 960 operator checkpoint
+
+The complete-model 960 baseline shows that Medium is currently dominated by
+the recognition path, but the dominant recognition operator is already served
+by the packed 1x1 implementation. The direct microbenchmark below uses the
+same Windows x64 AVX2 build and the actual channel/geometry combinations seen
+in the Medium REC graph. It compares the scalar reference with the dispatched
+kernel; checksums are required to match before a speedup is reported.
+
+| Medium shape | Height | Width | Scalar (ms) | Dispatched (ms) | Speedup |
+|---|---:|---:|---:|---:|---:|
+| 512 → 1024 | 6 | 240 | 546.31 | 18.29 | 29.87x |
+| 1024 → 512 | 6 | 240 | 558.59 | 18.99 | 29.42x |
+| 1536 → 768 | 3 | 240 | 618.97 | 16.87 | 36.68x |
+
+These measurements are kernel-only timings, not end-to-end OCR latency. They
+show that replacing the generic Medium 1x1 path is not the next justified
+change: the current packed path is already roughly 29–37x faster on the
+largest Medium REC shapes while preserving the scalar checksum. The uninstrumented
+full-OCR run remains the decision source; its Medium detector is about 4.46 s
+on the project sample, so the next Medium optimization should profile DET
+ConvTranspose/regular 3x3 and other convolution classes in production context.
+
+Reproduce the checkpoint with the following commands:
+
+    cmake --build build --config Release --target packed-conv1x1-benchmark-driver
+    python tests/test_packed_conv1x1_benchmark.py --driver build/Release/packed-conv1x1-benchmark-driver.exe
+
+The test exercises both REC widths 320 and 960. The benchmark driver output is
+machine-readable and is intentionally kept out of Git under `build-local-data/`.
+The test exercises both REC widths 320 and 960. The benchmark driver output is
+machine-readable and is intentionally kept out of Git under `build-local-data/`.
+
+## Medium DET stride-2 3x3 checkpoint
+
+The Medium DET graph includes several stride-2 3x3 convolutions at 64 input
+and output channels. Those real geometries are now covered by the same
+checksum-validated benchmark at width 960:
+
+| Input shape | Scalar (ms) | Dispatched (ms) | Packed (ms) | Dispatched speedup |
+|---|---:|---:|---:|---:|
+| 64×128×960 → 64×64×480 | 560.02 | 141.76 | 134.52 | 3.95x |
+| 64×64×960 → 64×32×480 | 290.82 | 55.21 | 51.25 | 5.27x |
+| 64×32×960 → 64×16×480 | 126.18 | 20.63 | 20.86 | 6.12x |
+
+The packed implementation is already close to the dispatched AVX2 path on
+these cases (about 1.05–1.08x faster than dispatched, with one small shape
+within timing noise). This is a baseline, not a claim that the complete DET
+graph is optimized: Medium also contains large 5x5/7x7 and 9x9 depthwise or
+regular convolutions. Any new kernel should therefore be evaluated against
+the full-OCR 960 benchmark and the exact output checksum.

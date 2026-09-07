@@ -198,6 +198,9 @@ int main(int argc, char** argv) {
         {"middle-192x384", 192u, 384u, 6u},
         {"late-384x768", 384u, 768u, 3u},
         {"late-768x384", 768u, 384u, 3u},
+        {"medium-512x1024", 512u, 1024u, 6u},
+        {"medium-1024x512", 1024u, 512u, 6u},
+        {"medium-1536x768", 1536u, 768u, 3u},
     };
     uint32_t target_width = 960u;
     uint32_t iterations = 3u;

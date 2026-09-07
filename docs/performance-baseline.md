@@ -60,6 +60,28 @@ The four-worker configuration reduced complete OCR latency by 58.51% and ran
 2.41x as fast as one worker on this host. This is a local engineering result,
 not a portable latency guarantee.
 
+## PP-OCRv6 Tiny/Small/Medium 960 baseline
+
+This is the current model-selection and optimization baseline for the complete
+DET+CLS+REC path. All three profiles used the project test image
+`build/models/sample.ppm`, `REC width=960`, one warm-up, and three measured
+iterations through the same `lw-ocr-benchmark` executable on Windows x64 AVX2.
+Small and Medium reused the shared Tiny CLS asset and the shared
+`PP-OCRv6_small_rec_dict.txt` dictionary. Every run returned 16 lines.
+
+| Model | 1 worker mean | 4 worker mean | 1 worker peak RSS | 4 worker peak RSS |
+|---|---:|---:|---:|---:|
+| Tiny | 355.30 ms | 154.44 ms | 92.2 MiB | 177.4 MiB |
+| Small | 1,491.89 ms | 706.74 ms | 217.1 MiB | 499.1 MiB |
+| Medium | 7,797.50 ms | 3,904.37 ms | 649.9 MiB | 1,396.6 MiB |
+
+Relative to Tiny, Small is about 4.20x/4.58x slower and Medium about
+21.95x/25.28x slower for one/four workers. Medium's detector alone accounts
+for roughly 4.46 seconds in this run, so Medium optimization should start with
+DET profiling. The full JSON reports and the three-model summary remain local
+under `build-local-data/`; this table is the versioned reference point, not a
+cross-machine performance promise or a release gate.
+
 ## Local baseline
 
 The following is one local measurement, not a general performance promise:
