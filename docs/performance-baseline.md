@@ -84,29 +84,36 @@ cross-machine performance promise or a release gate.
 
 ## REC worker immutable-resource sharing
 
-The REC worker pool now loads the model bytes and dictionary once. The first
+The REC worker pool loads the model bytes and dictionary once. The first
 recognizer owns the loaded resources; additional workers clone an independent
 session and workspace while retaining the same immutable model and dictionary.
-This is an internal lifecycle change and does not alter the public C ABI or
-the byte-level OCR result contract. Packed weights and execution workspaces
-are intentionally still session-local in this first step.
+The clone now also retains the source session's immutable prepared-node table and
+packed-weight arena. Mutable tensors, activation buffers, and execution
+workspaces remain session-local. This is an internal lifecycle change and does
+not alter the public C ABI or the byte-level OCR result contract.
 
 A local follow-up run used the same sample, AVX2 build, REC width 960, one
-warm-up, and one measured iteration for Small and Medium. Peak RSS changed as
-follows relative to the preceding baseline (single-iteration measurements are
-directional, not release gates):
+warm-up, and one measured iteration. Peak RSS changed as follows relative to the
+preceding baseline (single-iteration measurements are directional, not release
+gates):
 
-| Model | Workers | Previous peak RSS | Shared-resource peak RSS |
-|---|---:|---:|---:|
-| Tiny | 4 | 177.4 MiB | 165.9 MiB |
-| Small | 4 | 499.1 MiB | 450.2 MiB |
-| Medium | 4 | 1,396.6 MiB | 1,118.6 MiB |
+| Model | Workers | Previous peak RSS | Model/dictionary sharing | Packed-constant sharing |
+|---|---:|---:|---:|---:|
+| Tiny | 4 | 177.4 MiB | 165.9 MiB | 161.6 MiB |
+| Small | 4 | 499.1 MiB | 450.2 MiB | 433.7 MiB |
+| Medium | 4 | 1,396.6 MiB | 1,118.6 MiB | 1,074.9 MiB |
 
-The larger-model results indicate that sharing immutable model bytes removes a
-meaningful part of the multi-worker working set. The next memory step is to
-share compiled packed constants without sharing mutable activation/workspace
-state; that requires a separate session/compiled-model design and should be
-validated with the same checksum and RSS protocol.
+The packed-constant phase removes another approximately 16.5 MiB from the Small
+four-worker peak and 43.7 MiB from the Medium four-worker peak in this run. The
+one-worker numbers remain effectively unchanged because there is no duplicate
+worker allocation to eliminate. Latency is not claimed from these one-iteration
+runs; the checksum and line count remained unchanged.
+
+The sharing is intentionally conservative: it aliases the constants prepared
+for the clone's initial REC width. If a session later switches to another
+adaptive width, that session may prepare a width-specific constant arena locally.
+A future compiled-model cache can deduplicate those width variants, but that is
+separate from this ABI-neutral worker-pool change.
 
 ## Local baseline
 

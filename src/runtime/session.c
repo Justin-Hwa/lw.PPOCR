@@ -44,6 +44,19 @@ static void workspace_release(void* pointer) {
 #endif
 }
 
+static void release_shared_prepared_constants(lw_shared_prepared_constants* constants) {
+    if (constants == NULL) {
+        return;
+    }
+    if (constants->ref_count > 1u) {
+        --constants->ref_count;
+        return;
+    }
+    workspace_release(constants->packed_weights);
+    free(constants->prepared_nodes);
+    free(constants);
+}
+
 static int align_up_64(uint64_t value, uint64_t* aligned_value) {
     const uint64_t mask = LW_WORKSPACE_ALIGNMENT - 1u;
     if (aligned_value == NULL || value > UINT64_MAX - mask) {
@@ -263,12 +276,21 @@ static lw_status prepare_constant_weights(lw_session* session, lw_error* error) 
         !lw_simd_level_has_packed_conv1x1(simd_level)) {
         return LW_STATUS_OK;
     }
+    session->shared_prepared_constants =
+        (lw_shared_prepared_constants*)calloc(1u, sizeof(*session->shared_prepared_constants));
+    if (session->shared_prepared_constants == NULL) {
+        lw_set_error(error, LW_STATUS_OUT_OF_MEMORY,
+                     "unable to allocate shared prepared constants");
+        return LW_STATUS_OUT_OF_MEMORY;
+    }
+    session->shared_prepared_constants->ref_count = 1u;
     session->prepared_nodes =
         (lw_prepared_node*)calloc(model->info.node_count, sizeof(*session->prepared_nodes));
     if (session->prepared_nodes == NULL) {
         lw_set_error(error, LW_STATUS_OUT_OF_MEMORY, "unable to allocate prepared node table");
         return LW_STATUS_OUT_OF_MEMORY;
     }
+    session->shared_prepared_constants->prepared_nodes = session->prepared_nodes;
     for (node_index = 0u; node_index < model->info.node_count; ++node_index) {
         uint32_t weight_tensor_index;
         uint64_t packed_weight_count;
@@ -315,6 +337,8 @@ static lw_status prepare_constant_weights(lw_session* session, lw_error* error) 
         return LW_STATUS_OUT_OF_MEMORY;
     }
     session->packed_weight_bytes = (size_t)total_bytes;
+    session->shared_prepared_constants->packed_weights = session->packed_weights;
+    session->shared_prepared_constants->packed_weight_bytes = session->packed_weight_bytes;
     for (node_index = 0u; node_index < model->info.node_count; ++node_index) {
         lw_prepared_node* prepared = &session->prepared_nodes[node_index];
         uint32_t weight_tensor_index;
@@ -599,14 +623,41 @@ void lw_session_free(lw_session* session) {
     session->thread_pool = NULL;
     workspace_release(session->workspace);
     session->workspace = NULL;
-    workspace_release(session->packed_weights);
+    release_shared_prepared_constants(session->shared_prepared_constants);
+    session->shared_prepared_constants = NULL;
     session->packed_weights = NULL;
     session->packed_weight_bytes = 0u;
-    free(session->prepared_nodes);
     session->prepared_nodes = NULL;
     free(session->tensors);
     session->tensors = NULL;
     free(session);
+}
+
+lw_status lw_session_share_prepared_constants(lw_session* destination,
+                                               const lw_session* source,
+                                               lw_error* error) {
+    if (destination == NULL || source == NULL || destination->model != source->model) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT,
+                     "sessions from the same model are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    if (source->shared_prepared_constants == NULL) {
+        lw_set_error(error, LW_STATUS_OK, "");
+        return LW_STATUS_OK;
+    }
+    if (source->shared_prepared_constants->ref_count == UINT32_MAX) {
+        lw_set_error(error, LW_STATUS_OUT_OF_BOUNDS,
+                     "prepared constants reference count overflows");
+        return LW_STATUS_OUT_OF_BOUNDS;
+    }
+    release_shared_prepared_constants(destination->shared_prepared_constants);
+    destination->shared_prepared_constants = source->shared_prepared_constants;
+    ++destination->shared_prepared_constants->ref_count;
+    destination->prepared_nodes = source->prepared_nodes;
+    destination->packed_weights = source->packed_weights;
+    destination->packed_weight_bytes = source->packed_weight_bytes;
+    lw_set_error(error, LW_STATUS_OK, "");
+    return LW_STATUS_OK;
 }
 
 lw_status lw_session_get_info(const lw_session* session, lw_session_info* info) {

@@ -25,6 +25,13 @@ typedef struct lw_prepared_node {
     uint64_t packed_weight_count;
 } lw_prepared_node;
 
+typedef struct lw_shared_prepared_constants {
+    uint32_t ref_count;
+    lw_prepared_node* prepared_nodes;
+    uint8_t* packed_weights;
+    size_t packed_weight_bytes;
+} lw_shared_prepared_constants;
+
 typedef struct lw_runtime_tensor {
     uint32_t dtype;
     uint32_t rank;
@@ -45,6 +52,7 @@ struct lw_session {
     lw_prepared_node* prepared_nodes;
     uint8_t* packed_weights;
     size_t packed_weight_bytes;
+    lw_shared_prepared_constants* shared_prepared_constants;
     lw_thread_pool* thread_pool;
     uint32_t intra_op_thread_count;
     lw_session_info info;
@@ -53,5 +61,8 @@ struct lw_session {
 lw_status lw_resolve_shapes(lw_session* session, uint64_t max_tensor_size, lw_error* error);
 lw_status lw_plan_workspace(lw_session* session, uint64_t max_workspace_size, lw_error* error);
 void lw_session_set_intra_op_thread_count(lw_session* session, uint32_t thread_count);
+lw_status lw_session_share_prepared_constants(lw_session* destination,
+                                               const lw_session* source,
+                                               lw_error* error);
 
 #endif

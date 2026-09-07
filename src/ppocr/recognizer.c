@@ -7,6 +7,7 @@
 #include "model_internal.h"
 #include "profile_internal.h"
 #include "rec_internal.h"
+#include "session_internal.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -410,6 +411,11 @@ lw_status lw_recognizer_clone(const lw_recognizer* source, lw_recognizer** out_r
     lw_rec_dictionary_retain(clone->dictionary);
     lw_session_info_init(&session_info);
     status = configure_session(clone, source->current_target_width, &session_info, error);
+    if (status != LW_STATUS_OK) {
+        lw_recognizer_free(clone);
+        return status;
+    }
+    status = lw_session_share_prepared_constants(clone->session, source->session, error);
     if (status != LW_STATUS_OK) {
         lw_recognizer_free(clone);
         return status;
