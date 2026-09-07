@@ -10,6 +10,7 @@
 #define LW_REC_INPUT_HEIGHT 48u
 
 typedef struct lw_rec_dictionary lw_rec_dictionary;
+typedef struct lw_model lw_model;
 
 /* Full OCR may treat the public REC target width as a maximum and select a
  * smaller graph width for short crops. These helpers stay private so the
@@ -28,6 +29,7 @@ lw_status lw_rec_preprocess_bgr_u8(const uint8_t* source, uint64_t source_byte_c
 lw_status lw_rec_dictionary_load(const char* path_utf8, lw_rec_dictionary** out_dictionary,
                                  lw_error* error);
 void lw_rec_dictionary_free(lw_rec_dictionary* dictionary);
+void lw_rec_dictionary_retain(lw_rec_dictionary* dictionary);
 uint32_t lw_rec_dictionary_class_count(const lw_rec_dictionary* dictionary);
 uint32_t lw_rec_dictionary_max_label_byte_count(const lw_rec_dictionary* dictionary);
 
@@ -43,5 +45,8 @@ lw_status lw_rec_ctc_decode_known_capacity_f32(const lw_rec_dictionary* dictiona
                                                char* text_utf8, uint64_t text_capacity,
                                                uint64_t* required_capacity, float* score,
                                                uint32_t* emitted_count, lw_error* error);
+
+lw_status lw_recognizer_clone(const lw_recognizer* source, lw_recognizer** out_recognizer,
+                              lw_error* error);
 
 #endif

@@ -238,12 +238,17 @@ lw_status lw_ocr_create(const char* detector_model_path_utf8,
                 if (status != LW_STATUS_OK)
                     goto fail;
             }
-            status =
-                lw_recognizer_create(recognizer_model_path_utf8, dictionary_path_utf8,
-                                     &values.recognizer, &ocr->recognizers[worker_index], error);
+            if (worker_index == 0u) {
+                status = lw_recognizer_create(recognizer_model_path_utf8, dictionary_path_utf8,
+                                              &values.recognizer, &ocr->recognizers[worker_index],
+                                              error);
+            } else {
+                status = lw_recognizer_clone(ocr->recognizers[0],
+                                             &ocr->recognizers[worker_index], error);
+            }
             if (status != LW_STATUS_OK)
                 goto fail;
-            if (values.recognizer.target_width > 320u) {
+            if (worker_index == 0u && values.recognizer.target_width > 320u) {
                 status =
                     lw_recognizer_enable_adaptive_width(ocr->recognizers[worker_index], 1u, error);
                 if (status != LW_STATUS_OK)

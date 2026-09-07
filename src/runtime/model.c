@@ -139,6 +139,7 @@ lw_status lw_model_load(const char* path_utf8, const lw_model_options* options,
         lw_set_error(error, LW_STATUS_OUT_OF_MEMORY, "unable to allocate model handle");
         return LW_STATUS_OUT_OF_MEMORY;
     }
+    model->ref_count = 1u;
     model->byte_count = (size_t)length;
     model->bytes = (uint8_t*)malloc(model->byte_count);
     if (model->bytes == NULL) {
@@ -170,9 +171,19 @@ void lw_model_free(lw_model* model) {
     if (model == NULL) {
         return;
     }
+    if (model->ref_count > 1u) {
+        --model->ref_count;
+        return;
+    }
     free(model->bytes);
     model->bytes = NULL;
     free(model);
+}
+
+void lw_model_retain(lw_model* model) {
+    if (model != NULL && model->ref_count != UINT32_MAX) {
+        ++model->ref_count;
+    }
 }
 
 lw_status lw_model_get_info(const lw_model* model, lw_model_info* info) {

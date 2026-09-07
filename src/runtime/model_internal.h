@@ -23,6 +23,7 @@
 #define LWM_V0_TENSOR_FLAG_OUTPUT 4u
 
 struct lw_model {
+    uint32_t ref_count;
     uint8_t* bytes;
     size_t byte_count;
     lw_model_info info;
@@ -37,5 +38,6 @@ struct lw_model {
 };
 
 lw_status lw_validate_lwm_v0(lw_model* model, lw_error* error);
+void lw_model_retain(lw_model* model);
 
 #endif

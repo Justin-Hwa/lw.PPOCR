@@ -17,6 +17,7 @@
 #define LW_REC_MAX_DICTIONARY_SIZE (UINT64_C(1024) * UINT64_C(1024))
 
 struct lw_rec_dictionary {
+    uint32_t ref_count;
     uint8_t* bytes;
     uint32_t byte_count;
     uint32_t entry_count;
@@ -162,6 +163,7 @@ lw_status lw_rec_dictionary_load(const char* path_utf8, lw_rec_dictionary** out_
         lw_set_error(error, LW_STATUS_OUT_OF_MEMORY, "unable to allocate dictionary handle");
         return LW_STATUS_OUT_OF_MEMORY;
     }
+    dictionary->ref_count = 1u;
     dictionary->byte_count = (uint32_t)length;
     dictionary->bytes =
         (uint8_t*)malloc(dictionary->byte_count == 0u ? 1u : dictionary->byte_count);
@@ -223,10 +225,20 @@ void lw_rec_dictionary_free(lw_rec_dictionary* dictionary) {
     if (dictionary == NULL) {
         return;
     }
+    if (dictionary->ref_count > 1u) {
+        --dictionary->ref_count;
+        return;
+    }
     free(dictionary->lengths);
     free(dictionary->offsets);
     free(dictionary->bytes);
     free(dictionary);
+}
+
+void lw_rec_dictionary_retain(lw_rec_dictionary* dictionary) {
+    if (dictionary != NULL && dictionary->ref_count != UINT32_MAX) {
+        ++dictionary->ref_count;
+    }
 }
 
 uint32_t lw_rec_dictionary_class_count(const lw_rec_dictionary* dictionary) {

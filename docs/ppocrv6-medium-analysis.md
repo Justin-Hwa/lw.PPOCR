@@ -361,3 +361,12 @@ within timing noise). This is a baseline, not a claim that the complete DET
 graph is optimized: Medium also contains large 5x5/7x7 and 9x9 depthwise or
 regular convolutions. Any new kernel should therefore be evaluated against
 the full-OCR 960 benchmark and the exact output checksum.
+
+The current DET profile makes that priority more concrete. Summing only the
+positive-time DET convolution nodes from the 960 profile gives approximately
+166.77 ms for regular 7x7, 104.40 ms for regular 5x5, 81.67 ms for 9x9
+depthwise, and 43.80 ms for regular 3x3. The two ConvTranspose nodes together
+account for about 23.31 ms. These are instrumented node timings, so they are
+not portable latency promises, but they are sufficient to choose the next A/B
+candidate: start with a correctness-checked 7x7 path, then measure whether a
+5x5 path is worth its additional code and register pressure.

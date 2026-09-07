@@ -4,6 +4,7 @@
 
 #include "error_internal.h"
 #include "executor_internal.h"
+#include "model_internal.h"
 #include "profile_internal.h"
 #include "rec_internal.h"
 
@@ -378,6 +379,46 @@ lw_status lw_recognizer_create(const char* model_path_utf8, const char* dictiona
 fail:
     lw_recognizer_free(recognizer);
     return status;
+}
+
+lw_status lw_recognizer_clone(const lw_recognizer* source, lw_recognizer** out_recognizer,
+                              lw_error* error) {
+    lw_recognizer* clone;
+    lw_session_info session_info;
+    lw_status status;
+    if (out_recognizer != NULL) {
+        *out_recognizer = NULL;
+    }
+    if (source == NULL || out_recognizer == NULL || source->model == NULL ||
+        source->dictionary == NULL || source->current_target_width == 0u) {
+        lw_set_error(error, LW_STATUS_INVALID_ARGUMENT,
+                     "source recognizer and output handle are required");
+        return LW_STATUS_INVALID_ARGUMENT;
+    }
+    clone = (lw_recognizer*)calloc(1u, sizeof(*clone));
+    if (clone == NULL) {
+        lw_set_error(error, LW_STATUS_OUT_OF_MEMORY, "unable to allocate recognizer clone");
+        return LW_STATUS_OUT_OF_MEMORY;
+    }
+    clone->model = source->model;
+    clone->dictionary = source->dictionary;
+    clone->max_image_pixels = source->max_image_pixels;
+    clone->session_options = source->session_options;
+    clone->adaptive_width_enabled = source->adaptive_width_enabled;
+    clone->info = source->info;
+    lw_model_retain(clone->model);
+    lw_rec_dictionary_retain(clone->dictionary);
+    lw_session_info_init(&session_info);
+    status = configure_session(clone, source->current_target_width, &session_info, error);
+    if (status != LW_STATUS_OK) {
+        lw_recognizer_free(clone);
+        return status;
+    }
+    clone->info.time_steps = clone->current_time_steps;
+    clone->info.workspace_size = session_info.workspace_size;
+    *out_recognizer = clone;
+    lw_set_error(error, LW_STATUS_OK, "");
+    return LW_STATUS_OK;
 }
 
 void lw_recognizer_free(lw_recognizer* recognizer) {

@@ -82,6 +82,32 @@ DET profiling. The full JSON reports and the three-model summary remain local
 under `build-local-data/`; this table is the versioned reference point, not a
 cross-machine performance promise or a release gate.
 
+## REC worker immutable-resource sharing
+
+The REC worker pool now loads the model bytes and dictionary once. The first
+recognizer owns the loaded resources; additional workers clone an independent
+session and workspace while retaining the same immutable model and dictionary.
+This is an internal lifecycle change and does not alter the public C ABI or
+the byte-level OCR result contract. Packed weights and execution workspaces
+are intentionally still session-local in this first step.
+
+A local follow-up run used the same sample, AVX2 build, REC width 960, one
+warm-up, and one measured iteration for Small and Medium. Peak RSS changed as
+follows relative to the preceding baseline (single-iteration measurements are
+directional, not release gates):
+
+| Model | Workers | Previous peak RSS | Shared-resource peak RSS |
+|---|---:|---:|---:|
+| Tiny | 4 | 177.4 MiB | 165.9 MiB |
+| Small | 4 | 499.1 MiB | 450.2 MiB |
+| Medium | 4 | 1,396.6 MiB | 1,118.6 MiB |
+
+The larger-model results indicate that sharing immutable model bytes removes a
+meaningful part of the multi-worker working set. The next memory step is to
+share compiled packed constants without sharing mutable activation/workspace
+state; that requires a separate session/compiled-model design and should be
+validated with the same checksum and RSS protocol.
+
 ## Local baseline
 
 The following is one local measurement, not a general performance promise:
