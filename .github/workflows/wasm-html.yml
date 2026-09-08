@@ -88,6 +88,9 @@ jobs:
             sha256sum -c "$(basename "${node_archive}").sha256"
           )
 
+      - name: Run keyword search and controller regression tests
+        run: node --test web/test-pdf-search.cjs web/test-search-state.cjs
+
       - name: Run browser SDK contract and memory test
         run: >-
           python web/test_ocr_sdk.py

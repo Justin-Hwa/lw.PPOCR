@@ -63,3 +63,10 @@ C Runtime app-local files selected by CMake from the installed Visual Studio
 toolchain. Their redistribution and use are governed by the applicable
 Microsoft Visual Studio license terms. They are packaging dependencies, not
 source dependencies of the pure-C OCR runtime.
+
+## Offline PDF search extension
+
+PDF.js 6.3.289 CMaps and standard fonts are packaged from the exact archive and
+SHA-256 recorded in `web/vendor/pdfjs/VERSION`. Their bundled LICENSE files
+(including CMap and font licenses) are embedded verbatim as JSON in the final
+HTML (`pdf-text-resource-licenses`). They are never downloaded at runtime.

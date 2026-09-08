@@ -9,8 +9,9 @@ SDK does not contain PDF.js.
 `LW_WEB_PDF=OFF` excludes these files from the generated HTML. With PDF support
 enabled, `BinaryDataFactory` serves `jbig2.wasm`, `openjpeg.wasm`, and
 `qcms_bg.wasm` from the HTML itself with `useWorkerFetch=false`; the adapter
-does not fetch optional PDF resources from the network. CMaps and standard
-fonts are intentionally outside this image-only PDF frontend's scope.
+does not fetch optional PDF resources from the network. The fork also embeds CMaps and standard fonts. `web/prepare_pdf_text_resources.py`
+reads the same SHA-256-verified source archive during packaging; its font and
+CMap licenses are retained in the generated HTML.
 
 The source archive and file hashes are recorded in `VERSION`. PDF.js is
 licensed under Apache-2.0; see `LICENSE`, the per-codec license files

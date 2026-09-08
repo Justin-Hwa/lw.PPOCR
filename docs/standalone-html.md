@@ -1,5 +1,9 @@
 # Standalone HTML usage
 
+> This fork adds offline text-layer extraction and keyword search. See
+> [the current fork guide](offline-pdf-search.zh-CN.md) for matching, confidence,
+> packaging and validation details. The reusable OCR SDK remains unchanged.
+
 **ocr-demo.html** is the ready-made offline OCR application. It embeds the
 browser SDK, WebAssembly runtime, DET/CLS/REC models, dictionary, PDF.js,
 user interface, and support image in one file. Selected images and PDFs remain
@@ -144,8 +148,8 @@ The boundary remains: PDF.js renders a page to Canvas, then `LwPpocr` recognizes
 that Canvas. The packaged page includes PDF.js 6.3.289's `jbig2.wasm`,
 `openjpeg.wasm`, and `qcms_bg.wasm` helpers through an embedded
 `BinaryDataFactory`, so supported CCITT/JBIG2, JPX/JPEG2000, and ICC paths do
-not need network resources. CMaps and standard-font files remain outside this
-image-only frontend's scope. Integrations should keep image decoding, WASM
+not need network resources. This fork also embeds CMaps and standard-font files at packaging time for
+text-layer extraction; see the fork guide. Integrations should keep image decoding, WASM
 pointers, buffer ownership, and native calls inside the SDK. Demo changes should
 operate on structured OCR results. The reusable **lw-ppocr.js** remains
 image/Canvas-only and does not contain PDF.js.

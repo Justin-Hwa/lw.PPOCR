@@ -1,7 +1,7 @@
 /*
  * PDF document frontend for the standalone OCR Demo.
  *
- * This adapter owns PDF.js loading and PDF page -> Canvas rendering only. It
+ * This adapter owns PDF.js loading and PDF page -> Canvas rendering and text-layer extraction. It
  * deliberately knows nothing about LwPpocr or OCR result schemas.
  */
 (function(global) {
@@ -15,6 +15,7 @@
     "openjpeg.wasm": "__LW_PDFJS_OPENJPEG_BASE64__",
     "qcms_bg.wasm": "__LW_PDFJS_QCMS_BASE64__"
   });
+  const TEXT_RESOURCES = __LW_PDFJS_TEXT_RESOURCES__;
   const wasmBytesCache = new Map();
   const wasmRequestCounts = Object.create(null);
   const WORKER_START_TIMEOUT_MS = 2500;
@@ -137,18 +138,15 @@ if (typeof Promise.withResolvers !== "function") {
   }
 
   // PDF.js calls this factory from the worker when useWorkerFetch is disabled.
-  // Only the three vendored WASM files are exposed; CMaps and standard fonts
-  // remain deliberately unsupported in this image-only PDF frontend.
+  // 所有资源从单 HTML 内嵌数据读取，包含中文 CMap、标准字体和图像解码 WASM。
   class EmbeddedBinaryDataFactory {
     constructor({wasmUrl} = {}) {
       this.wasmUrl = wasmUrl || "embedded-pdfjs-wasm/";
     }
 
     async fetch({kind, filename}) {
-      if (kind !== "wasmUrl") {
-        throw new Error(`Offline PDF resource kind is unsupported: ${kind}`);
-      }
-      const encoded = PDFJS_WASM_BASE64[filename];
+      const assets = kind === "wasmUrl" ? PDFJS_WASM_BASE64 : TEXT_RESOURCES[kind];
+      const encoded = assets && Object.hasOwn(assets, filename) ? assets[filename] : null;
       if (!encoded || encoded[0] === "_") {
         throw new Error(`Offline PDF WASM asset is unavailable: ${filename}`);
       }
@@ -368,6 +366,9 @@ if (typeof Promise.withResolvers !== "function") {
         useWasm: true,
         useWorkerFetch: false,
         wasmUrl: "embedded-pdfjs-wasm/",
+        cMapUrl: "embedded-pdfjs-cmaps/",
+        cMapPacked: true,
+        standardFontDataUrl: "embedded-pdfjs-fonts/",
         BinaryDataFactory: EmbeddedBinaryDataFactory
       });
       const pdfDocument = await loadingTask.promise;
@@ -432,6 +433,17 @@ if (typeof Promise.withResolvers !== "function") {
             scale,
             pdfWidth,
             pdfHeight,
+            async extractText() {
+              if (released) throw new LwPdfError("页面已释放", "LW_PDF_CLOSED", "text");
+              const content = await page.getTextContent();
+              return LwPdfTextGeometry.extract(content, viewport, pdfjs.Util);
+            },
+            async hasRasterImages() {
+              const operators = await page.getOperatorList();
+              const imageOps = new Set(Object.entries(pdfjs.OPS)
+                .filter(([name]) => /paint.*Image/.test(name)).map(([,value]) => value));
+              return operators.fnArray.some(op => imageOps.has(op));
+            },
             toPdfPoint(x, y) {
               return viewport.convertToPdfPoint(x, y);
             },
