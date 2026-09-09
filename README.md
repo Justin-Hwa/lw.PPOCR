@@ -1,4 +1,10 @@
-# lw.PPOCR.C
+# lw.PPOCR — 单 HTML 离线 PDF 检索
+
+本 fork 在 [lxw112190/lw.PPOCR.C](https://github.com/lxw112190/lw.PPOCR.C) 上增加：文字版/扫描版 PDF、多字符串检索、逐页次数与置信度、高亮定位。
+
+**快速生成：** `python web/repack_offline_search.py` → `dist/offline-pdf-search.html`。
+
+详见 [中文使用、打包与验证说明](docs/offline-pdf-search.zh-CN.md)。下方保留上游项目说明。
 
 [简体中文](README.zh-CN.md) | English
 

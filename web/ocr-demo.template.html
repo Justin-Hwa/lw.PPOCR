@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>lw.PPOCR.C · 离线 OCR 工作台</title>
+  <title>离线 PDF 检索工作台</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif; }
     * { box-sizing: border-box; }
@@ -84,6 +84,23 @@
     .index { color: #8b99aa; font-variant-numeric: tabular-nums; }
     .text { overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
     .score { margin-top: 3px; color: #8290a0; font-size: 11px; }
+    .search-controls { padding: 18px; margin-bottom: 18px; }
+    .search-controls label { display: block; font-weight: 600; font-size: 14px; }
+    #search-queries { width: 100%; min-height: 88px; resize: vertical; margin: 10px 0; padding: 12px; border: 1px solid #b9cadd; border-radius: 8px; font: 14px/1.6 inherit; }
+    .search-options { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+    .search-options label { font-size: 13px; font-weight: 400; }
+    .search-hint { color: #607086; font-size: 12px; line-height: 1.7; margin: 10px 0 0; }
+    #search-summary { margin-bottom: 18px; }
+    #search-coverage { margin: 0; padding: 12px 18px; background: #edf5ff; color: #314e70; font-size: 13px; }
+    #search-results { max-height: 380px; overflow: auto; }
+    .query-result { border-top: 1px solid #edf1f5; padding: 12px 18px; }
+    .query-result summary { cursor: pointer; font-size: 14px; overflow-wrap: anywhere; }
+    .query-result .not-found { color: #805b20; }
+    .query-page { font-size: 13px; margin: 12px 0 6px; }
+    .query-hit { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 9px 12px; background: #f5f8fc; color: #314e70; font-weight: 400; overflow-wrap: anywhere; line-height: 1.6; border: 1px solid #dce6f0; }
+    .query-hit.active { border-color: #2169c1; background: #e4f0ff; }
+    #overlay polygon.search-hit { fill: #ffcf4044; stroke: #bc8100; }
+    #overlay polygon.search-hit.active { fill: #2878d455; stroke: #2169c1; }
     .support { margin-top: 18px; padding: 0; }
     .support summary { padding: 14px 18px; color: #24354a; font-size: 15px; font-weight: 600; cursor: pointer; }
     .support-content { display: flex; gap: 24px; align-items: center; padding: 4px 20px 20px; }
@@ -131,7 +148,7 @@
 </head>
 <body>
   <header>
-    <h1>lw.PPOCR.C · 离线 OCR 工作台</h1>
+    <h1>离线 PDF 检索工作台</h1>
     <p>纯浏览器本地推理 · 模型、WASM 和 PDF.js 已内嵌 · 文件不会上传到网络</p>
   </header>
   <main>
@@ -157,7 +174,7 @@
       </label>
       <label class="options"><input id="use-cls" type="checkbox" disabled> 启用方向分类（CLS）</label>
       <button id="run" type="button" disabled>开始识别</button>
-      <span id="status" role="status" aria-live="polite" data-loading="true">正在下载离线引擎…</span>
+      <span id="status" role="status" aria-live="polite" data-loading="true">正在加载离线引擎…</span>
       <script>
         // This tiny status controller runs before the large embedded SDK/model
         // payload at the end of the document has finished downloading. It
@@ -165,7 +182,7 @@
         (function () {
           var node = document.getElementById("status");
           var started = Date.now();
-          var phase = "正在下载并解析离线引擎";
+          var phase = "正在读取并解析内嵌引擎";
           var active = true;
           function render() {
             if (!active) return;
@@ -190,6 +207,15 @@
         })();
       </script>
     </div>
+    <section class="search-controls card" aria-label="检索字符串">
+      <label for="search-queries">想在文件中查找什么？每行输入一个字符串</label>
+      <textarea id="search-queries" placeholder="例如：合同编号&#10;付款日期&#10;上海" spellcheck="false"></textarea>
+      <div class="search-options">
+        <label><input id="search-case" type="checkbox"> 区分英文字母大小写</label>
+        <label><input id="search-spaces" type="checkbox" checked> 忽略空白与换行</label>
+      </div>
+      <p class="search-hint">识别后修改字符串即可重新检索，无需重复 OCR。按字面匹配，统一全角/半角；不进行模糊匹配。标注覆盖命中的 PDF 文本片段或 OCR 文字行，同一行的多次命中分别计数。</p>
+    </section>
     <section id="pdf-controls" class="pdf-controls card" hidden aria-label="PDF 识别选项">
       <div id="pdf-meta" class="pdf-meta"></div>
       <label class="pdf-option">识别范围
@@ -203,6 +229,13 @@
           <option value="144">快速 · 144 DPI</option>
           <option value="180" selected>标准 · 180 DPI</option>
           <option value="220">清晰 · 220 DPI</option>
+        </select>
+      </label>
+      <label class="pdf-option">处理方式
+        <select id="pdf-mode">
+          <option value="auto">自动：文字层 + 扫描图 OCR</option>
+          <option value="ocr">全页 OCR（文字层异常时）</option>
+          <option value="text">仅读取文字层</option>
         </select>
       </label>
       <div class="pdf-page-nav" aria-label="PDF 页面">
@@ -224,6 +257,11 @@
       </div>
     </details>
     <div id="stats">引擎状态：加载中</div>
+    <section id="search-summary" class="card" aria-label="全部字符串的检索结果" hidden>
+      <h2>检索结果 · 点击命中项定位</h2>
+      <p id="search-coverage" role="status" aria-live="polite"></p>
+      <div id="search-results"></div>
+    </section>
     <nav class="mobile-tabs" aria-label="工作区视图">
       <button id="show-image" class="active" type="button" aria-pressed="true">图片</button>
       <button id="show-results" type="button" aria-pressed="false">结果</button>
@@ -255,7 +293,7 @@
         <div id="results"><div class="empty">选择图片后，这里会显示识别文本。</div></div>
       </section>
     </div>
-    <details id="support" class="support card" open>
+    <details id="support" class="support card">
       <summary>联系与支持</summary>
       <div class="support-content">
         <img src="data:image/jpeg;base64,__LW_SPONSOR_IMAGE_BASE64__" alt="赞赏二维码">
@@ -268,6 +306,7 @@
     </details>
     <footer><a href="https://github.com/lxw112190/lw.PPOCR.C" target="_blank" rel="noopener noreferrer">lw.PPOCR.C</a> · WebAssembly · 完整 DET → CLS → REC 流程</footer>
   </main>
+  <script type="application/json" id="pdf-text-resource-licenses">__LW_TEXT_RESOURCE_LICENSES__</script>
   <script>__LW_PDF_BOOTSTRAP_JS__</script>
   <script>__LW_SDK_JS__</script>
   <script>__LW_DEMO_UI_JS__</script>

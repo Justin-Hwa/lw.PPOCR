@@ -430,6 +430,9 @@ if(EMSCRIPTEN)
             lw-ocr-js
             "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo.template.html"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo-ui.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf-search.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf/text_geometry.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_pdf_text_resources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/package_ocr_html.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/sponsor.jpg"
             ${LW_PPOCR_C_WEB_HTML_PDF_DEPENDS}

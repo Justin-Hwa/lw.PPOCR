@@ -228,11 +228,12 @@ def main() -> int:
             assert result["schema_version"] == 2
             assert result["source_type"] == "pdf"
             assert result["source"] == fixture.name
-            assert result["document"] == {"page_count": 2, "processed_pages": 2}
+            assert result["document"] == {"page_count": 2, "processed_pages": 2, "status": "complete"}
             assert result["options"] == {
                 "use_cls": False,
                 "reading_order": "horizontal-ltr",
                 "pdf_dpi": 180,
+                "pdf_mode": "auto",
                 "pdf_max_pixels": 5_000_000,
             }
             assert len(result["pages"]) == 2

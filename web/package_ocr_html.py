@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 from pathlib import Path
+from prepare_pdf_text_resources import load_resources
 
 
 def read_text(path: Path) -> str:
@@ -50,7 +51,7 @@ def main() -> int:
     if args.no_pdf:
         pdf_bootstrap = "/* PDF support excluded by LW_WEB_PDF=OFF. */"
     else:
-        pdf_bootstrap = read_text(args.pdf_adapter)
+        pdf_bootstrap = read_text(args.pdf_adapter.with_name("text_geometry.js")) + "\n" + read_text(args.pdf_adapter)
         pdf_bootstrap = pdf_bootstrap.replace(
             "__LW_PDFJS_VERSION__", args.pdfjs_version
         )
@@ -75,11 +76,17 @@ def main() -> int:
             base64.b64encode(args.pdfjs_qcms.read_bytes()).decode("ascii"),
         )
 
+    licenses = "{}"
+    if not args.no_pdf:
+        resources, licenses = load_resources(args.output.parent / "pdfjs-cache")
+        pdf_bootstrap = pdf_bootstrap.replace("__LW_PDFJS_TEXT_RESOURCES__", resources)
+
     html = read_text(args.template)
     replacements = {
+        "__LW_TEXT_RESOURCE_LICENSES__": licenses.replace("<", "\\u003c"),
         "__LW_PDF_BOOTSTRAP_JS__": pdf_bootstrap,
         "__LW_SDK_JS__": read_text(args.sdk),
-        "__LW_DEMO_UI_JS__": read_text(args.ui),
+        "__LW_DEMO_UI_JS__": read_text(args.ui.with_name("pdf-search.js")) + "\n" + read_text(args.ui),
         "__LW_SPONSOR_IMAGE_BASE64__": base64.b64encode(
             args.sponsor.read_bytes()
         ).decode("ascii"),
