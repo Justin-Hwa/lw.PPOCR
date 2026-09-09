@@ -182,8 +182,16 @@
     .result-card.collapsed .result-actions { display:none; }
     :root[data-theme="dark"] header { background:#050607; }
     .collapse-button { padding:0; background:none; color:var(--ink); text-align:left; font-size:15px; }
-    .collapse-button::before { content:"▾"; display:inline-block; margin-right:8px; }
-    .collapse-button[aria-expanded="false"]::before { content:"▸"; }
+    main summary { list-style:none; }
+    main summary::-webkit-details-marker { display:none; }
+    main summary::marker { content:""; }
+    main summary::before, .collapse-button::before {
+      content:""; display:inline-block; width:8px; height:10px;
+      margin-right:10px; vertical-align:baseline; background:currentColor;
+      clip-path:polygon(0 0,100% 50%,0 100%); transform-origin:center;
+    }
+    main details[open] > summary::before,
+    .collapse-button[aria-expanded="true"]::before { transform:rotate(90deg); }
     .preview-header, .result-header { flex-shrink:0; flex-wrap:wrap; }
     #preview-content, #results-content { flex:1; min-height:0; min-width:0; display:flex; flex-direction:column; }
     #results { flex:1; min-height:0; max-height:none; overflow:auto; overscroll-behavior:contain; }
