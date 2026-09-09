@@ -16,6 +16,23 @@ from playwright.sync_api import ConsoleMessage, Request, sync_playwright
 EXPECTED_FIRST_LINE = "纯臻营养护发素"
 
 
+def assert_preview_drag(page) -> None:
+    """验证真实鼠标拖动滚动视口，释放后结束平移。"""
+    viewport = page.locator("#preview-viewport")
+    viewport.scroll_into_view_if_needed()
+    viewport.evaluate("(node) => { node.scrollLeft = 0; node.scrollTop = 0; }")
+    box = viewport.bounding_box()
+    assert box is not None
+    x, y = box["x"] + 160, box["y"] + 100
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x - 50, y - 40, steps=5)
+    assert viewport.evaluate("(node) => node.scrollLeft") >= 45
+    assert viewport.evaluate("(node) => node.classList.contains('panning')")
+    page.mouse.up()
+    assert not viewport.evaluate("(node) => node.classList.contains('panning')")
+
+
 def create_image_pdf(
     jpeg_path: Path, output: Path, page_count: int = 2, filter_name: str = "DCTDecode"
 ) -> None:
@@ -336,6 +353,7 @@ def main() -> int:
             assert page.locator("#pdf-progress").get_attribute("data-running") == "false"
             page.locator("#zoom-in").click()
             assert page.locator("#zoom-label").inner_text() == "125%"
+            assert_preview_drag(page)
             page.locator("#preview-fullscreen").click()
             assert page.locator("#preview-dialog").is_visible()
             assert page.locator("#preview-dialog #canvas").count() == 1
@@ -344,6 +362,7 @@ def main() -> int:
             assert page.evaluate("window.__lwOcrTest.snapshot().pdfCurrentPage") == 1
             page.locator("#zoom-in").click()
             assert page.locator("#zoom-label").inner_text() == "150%"
+            assert_preview_drag(page)
             page.locator("#toggle-overlay").click()
             assert page.locator("#overlay").is_visible()
             assert page.evaluate("""() => {

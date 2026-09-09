@@ -5,11 +5,14 @@ const Search=require("./pdf-search.js");
 class Element {
  constructor(){this.value="";this.checked=false;this.children=[];this.dataset={};this.listeners={};this.width=100;this.height=100;
   this.style={};this.attributes={};this.clientWidth=600;this.parentNode=null;this.open=false;
+  this.scrollLeft=0;this.scrollTop=0;this.captured=new Set();
   const classes=new Set();this.classList={toggle(k,on){if(on)classes.add(k);else classes.delete(k);},add(k){classes.add(k);},remove(k){classes.delete(k);},contains:k=>classes.has(k)};}
  addEventListener(name,fn){this.listeners[name]=fn;}
  setAttribute(k,v){this.attributes[k]=v;} getAttribute(k){return this.attributes[k]??null;}
  removeAttribute(k){delete this.attributes[k];} toggleAttribute(){} scrollIntoView(){} remove(){} click(){return this.listeners.click?.({target:this});} focus(){}
  showModal(){this.open=true;} close(){this.open=false;this.listeners.close?.();}
+ setPointerCapture(id){this.captured.add(id);} hasPointerCapture(id){return this.captured.has(id);}
+ releasePointerCapture(id){this.captured.delete(id);}
  appendChild(child){if(child.parentNode)child.parentNode.children=child.parentNode.children.filter(n=>n!==child);this.children.push(child);child.parentNode=this;return child;} replaceChildren(){this.children=[];}
  querySelectorAll(){return [];} getContext(){return {drawImage(){}};}
 }
@@ -181,4 +184,42 @@ test("所有静态与动态翻译键均包含四语文案及相同参数",async(
    assert.deepEqual(Array.from(value.matchAll(/\{\d+\}/g),m=>m[0]).sort(),params,key);
   });
  }
+});
+
+test("预览拖动平移及指针捕获：松开、取消、失焦后停止，弹窗内同样有效",async()=>{
+ const {context,get}=await setup([{text:[line("合同")]}]);
+ await context.__lwOcrTest.runOcr();
+ const original=JSON.stringify(context.__lwOcrTest.structuredResult());
+ const viewport=get("preview-viewport"),stage=get("preview-stage");
+ const event=(values={})=>({pointerId:1,pointerType:"mouse",isPrimary:true,button:0,buttons:1,
+  clientX:200,clientY:200,preventDefault(){this.prevented=true;},...values});
+ for(const finish of ["pointerup","pointercancel","lostpointercapture","blur"]){
+  viewport.scrollLeft=100;viewport.scrollTop=100;
+  stage.listeners.pointerdown(event());
+  assert.equal(viewport.hasPointerCapture(1),true);
+  viewport.listeners.pointermove(event({clientX:150,clientY:170}));
+  assert.equal(viewport.scrollLeft,150);assert.equal(viewport.scrollTop,130);
+  viewport.listeners.pointermove(event({pointerId:2,clientX:50}));
+  assert.equal(viewport.scrollLeft,150);
+  if(finish==="blur")context.dispatchEvent({type:"blur"});
+  else viewport.listeners[finish](event());
+  assert.equal(viewport.hasPointerCapture(1),false);
+  assert.equal(viewport.classList.contains("panning"),false);
+  viewport.listeners.pointermove(event({clientX:100}));
+  assert.equal(viewport.scrollLeft,150);
+ }
+ for(const values of [{button:2},{pointerType:"touch"},{isPrimary:false}]){
+  const e=event(values);stage.listeners.pointerdown(e);
+  assert.equal(viewport.hasPointerCapture(1),false);assert.equal(e.prevented,undefined);
+ }
+ context.__lwOcrTest.openPreview();
+ stage.listeners.pointerdown(event());
+ viewport.listeners.pointermove(event({clientX:100,clientY:100}));
+ assert.equal(viewport.scrollLeft,250);assert.equal(viewport.scrollTop,230);
+ context.__lwOcrTest.closePreview();
+ assert.equal(viewport.hasPointerCapture(1),false);
+ stage.listeners.pointerdown(event());
+ viewport.listeners.pointermove(event({buttons:0}));
+ assert.equal(viewport.hasPointerCapture(1),false);
+ assert.equal(JSON.stringify(context.__lwOcrTest.structuredResult()),original);
 });

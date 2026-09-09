@@ -94,8 +94,41 @@
   let zoom = 1;
   let fitPreview = true;
   let returnFocus = null;
+  let previewPan = null;
+
+  function endPreviewPan(event) {
+    if (!previewPan || (event && event.pointerId !== previewPan.id)) return;
+    const id = previewPan.id;
+    previewPan = null;
+    previewViewport.classList.remove("panning");
+    if (previewViewport.hasPointerCapture(id)) previewViewport.releasePointerCapture(id);
+  }
+  previewStage.addEventListener("pointerdown", event => {
+    // 触摸屏使用浏览器原生滚动和双指缩放；鼠标与触控笔使用指针捕获。
+    if (!source || previewPan || event.button !== 0 || event.isPrimary === false ||
+        event.pointerType === "touch") return;
+    previewViewport.setPointerCapture(event.pointerId);
+    previewPan = {id: event.pointerId, x: event.clientX, y: event.clientY};
+    previewViewport.classList.add("panning");
+    event.preventDefault();
+  });
+  previewViewport.addEventListener("pointermove", event => {
+    if (!previewPan || event.pointerId !== previewPan.id) return;
+    if (!(event.buttons & 1)) { endPreviewPan(event); return; }
+    // 移动滚动位置而非画布坐标，确保 PDF 与标注始终同步。
+    previewViewport.scrollLeft += previewPan.x - event.clientX;
+    previewViewport.scrollTop += previewPan.y - event.clientY;
+    previewPan.x = event.clientX;
+    previewPan.y = event.clientY;
+    event.preventDefault();
+  });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(type =>
+    previewViewport.addEventListener(type, endPreviewPan));
+  window.addEventListener("blur", () => endPreviewPan());
+  previewStage.addEventListener("dragstart", event => event.preventDefault());
 
   function setRegionOpen(name, open) {
+    if (name === "preview" && !open) endPreviewPan();
     document.getElementById(name + "-collapse").setAttribute("aria-expanded", String(open));
     document.getElementById(name + "-content").hidden = !open;
     document.getElementById(name === "preview" ? "preview-region" : "results-region")
@@ -103,6 +136,7 @@
     if (name === "preview" && open) applyZoom();
   }
   function applyZoom() {
+    previewStage.classList.toggle("pan-ready", Boolean(source));
     // Zoom is relative to the viewport width, independent of OCR render DPI.
     const width = previewViewport.clientWidth;
     if (width > 0) {
@@ -119,6 +153,7 @@
   }
   function changeZoom(delta) {
     if (!source) return;
+    endPreviewPan();
     zoom = Math.max(.25, Math.min(4, Math.round((zoom + delta) * 100) / 100));
     fitPreview = false;
     applyZoom();
@@ -132,6 +167,7 @@
   }
   function restorePreview() {
     if (previewContent.parentNode !== document.getElementById("dialog-content")) return;
+    endPreviewPan();
     document.getElementById("preview-region").appendChild(previewContent);
     fullscreenButton.hidden = false;
     document.body.classList.remove("preview-modal-open");
@@ -145,6 +181,7 @@
   }
   function openPreview() {
     if (!source || previewDialog.open) return;
+    endPreviewPan();
     returnFocus = document.activeElement;
     setRegionOpen("preview", true);
     document.getElementById("dialog-content").appendChild(previewContent);
@@ -171,7 +208,7 @@
   });
   zoomInButton.addEventListener("click", () => changeZoom(.25));
   zoomOutButton.addEventListener("click", () => changeZoom(-.25));
-  zoomFitButton.addEventListener("click", () => { zoom = 1; fitPreview = true; applyZoom(); });
+  zoomFitButton.addEventListener("click", () => { endPreviewPan(); zoom = 1; fitPreview = true; applyZoom(); });
   fullscreenButton.addEventListener("click", openPreview);
   document.getElementById("preview-close").addEventListener("click", closePreview);
   previewDialog.addEventListener("close", restorePreview);
@@ -413,6 +450,7 @@
     showResultsButton.setAttribute("aria-pressed", String(!showingImage));
   }
   function drawPreview(image, width, height) {
+    endPreviewPan();
     canvas.width = width;
     canvas.height = height;
     canvas.getContext("2d").drawImage(image, 0, 0, width, height);
@@ -576,6 +614,7 @@
   }
   async function selectFile(file) {
     if (running) return null;
+    endPreviewPan();
     const sequence = ++previewSequence;
     closePreview();
     zoom = 1; fitPreview = true;
