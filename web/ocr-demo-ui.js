@@ -216,7 +216,24 @@
   previewNext.addEventListener("click", () => navigatePdf(1).catch(error => setStatus(() => t("图片预览失败：") + error)));
   window.addEventListener("resize", applyZoom);
   if (window.ResizeObserver) new ResizeObserver(applyZoom).observe(previewViewport);
-  document.getElementById("language").addEventListener("change", event => LwI18n.setLanguage(event.target.value));
+  const languagePicker = document.getElementById("language-picker");
+  for (const code of LwI18n.languages) {
+    document.getElementById("language-" + code).addEventListener("click", () => {
+      LwI18n.setLanguage(code);
+      languagePicker.open = false;
+      document.getElementById("language").focus();
+    });
+  }
+  languagePicker.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      languagePicker.open = false;
+      document.getElementById("language").focus();
+      event.preventDefault();
+    }
+  });
+  document.addEventListener("click", event => {
+    if (!languagePicker.contains(event.target)) languagePicker.open = false;
+  });
   document.getElementById("theme-toggle").addEventListener("click", () => LwI18n.setTheme(LwI18n.theme === "dark" ? "light" : "dark"));
   window.addEventListener("lw:language", () => {
     setOverlayVisible(overlayVisible);

@@ -16,6 +16,17 @@ from playwright.sync_api import ConsoleMessage, Request, sync_playwright
 EXPECTED_FIRST_LINE = "纯臻营养护发素"
 
 
+def select_language(page, language: str) -> None:
+    """通过国旗菜单切换语言，同时验证纯图标与无障碍标签。"""
+    page.locator("#language").click()
+    choice = page.locator("#language-" + language)
+    assert choice.get_attribute("aria-label")
+    assert choice.inner_text() == ""
+    choice.click()
+    assert page.locator("#language-flag").get_attribute("href") == "#flag-" + language
+    assert page.locator("#language-picker").get_attribute("open") is None
+
+
 def assert_preview_drag(page) -> None:
     """验证真实鼠标拖动滚动视口，释放后结束平移。"""
     viewport = page.locator("#preview-viewport")
@@ -320,17 +331,33 @@ def main() -> int:
                 ("en", "Offline PDF Search"), ("ja", "オフライン PDF 検索"),
                 ("th", "ค้นหา PDF แบบออฟไลน์"), ("zh-CN", "离线 PDF 检索工作台"),
             ]:
-                page.locator("#language").select_option(language)
+                select_language(page, language)
                 assert page.locator("html").get_attribute("lang") == language
                 assert page.locator("header h1").inner_text() == title
                 assert page.evaluate("window.__lwOcrTest.structuredResult()") == result
             page.locator("#theme-toggle").click()
             assert page.locator("html").get_attribute("data-theme") == "dark"
-            page.locator("#language").select_option("en")
-            assert page.locator("#theme-toggle").inner_text() == "Light theme"
-            page.locator("#language").select_option("zh-CN")
+            select_language(page, "en")
+            assert page.locator("#theme-toggle").get_attribute("aria-label") == "Light theme"
+            assert page.locator("#theme-toggle").inner_text().strip() == ""
+            assert page.locator("#theme-toggle .theme-sun").is_visible()
+            select_language(page, "zh-CN")
             page.locator("#theme-toggle").click()
             assert page.locator("html").get_attribute("data-theme") == "light"
+            assert page.locator("#theme-toggle .theme-moon").is_visible()
+            select_language(page, "ja")
+            for width in [1180, 820, 390]:
+                page.set_viewport_size({"width": width, "height": 900})
+                assert page.evaluate("""() => {
+                    const controls = [...document.querySelectorAll('.pdf-option select')];
+                    const rects = controls.map(n => n.getBoundingClientRect());
+                    const noOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+                    const singleLine = [...document.querySelectorAll('.preview-tools button, .result-actions button')]
+                      .every(n => getComputedStyle(n).whiteSpace === 'nowrap');
+                    return noOverflow && singleLine && rects.every(r => Math.abs(r.height - 44) < 1);
+                }""")
+            page.set_viewport_size({"width": 1180, "height": 900})
+            select_language(page, "zh-CN")
             for region in ["source-region", "search-controls-region", "pdf-controls", "status-region"]:
                 summary = page.locator("#" + region + " > summary")
                 summary.click()

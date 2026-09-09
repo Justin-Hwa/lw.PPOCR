@@ -84,7 +84,11 @@ test("四种语言切换翻译动态结果，保留查询、原文、分数和�
  const original=JSON.stringify(context.__lwOcrTest.structuredResult());
  const labels={"en":"Page 1","ja":"1 ページ","th":"หน้า 1","zh-CN":"第 1 页"};
  for(const [language,label] of Object.entries(labels)){
-  context.LwI18n.setLanguage(language);
+  get("language-picker").open=true;
+  get("language-"+language).click();
+  assert.equal(get("language-picker").open,false);
+  assert.equal(get("language-flag").getAttribute("href"),"#flag-"+language);
+  assert.equal(get("language-"+language).getAttribute("aria-pressed"),"true");
   assert.equal(context.document.documentElement.lang,language);
   assert.equal(storage.get("lw-language"),language);
   assert.ok(get("search-results").children[0].children[1].textContent.includes(label));
@@ -104,6 +108,8 @@ test("主题及语言偏好持久化；切换主题不会重置当前提示",asy
  context.LwI18n.setTheme("light");
  assert.equal(get("status").textContent,before);
  assert.equal(storage.get("lw-theme"),"light");
+ assert.equal(get("theme-toggle").getAttribute("aria-label"),context.LwI18n.t("深色主题"));
+ assert.equal(get("theme-toggle").getAttribute("title"),context.LwI18n.t("深色主题"));
  const reopened=await setup([{text:[]}],{storage});
  assert.equal(reopened.context.document.documentElement.dataset.theme,"light");
  context.LwI18n.setLanguage("invalid");

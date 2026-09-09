@@ -983,8 +983,9 @@
     document.documentElement.dataset.theme = theme;
     const button = document.getElementById("theme-toggle");
     if (button) {
-      button.textContent = t(theme === "dark" ? "浅色主题" : "深色主题");
-      button.setAttribute("aria-pressed", String(theme === "dark"));
+      const label = t(theme === "dark" ? "浅色主题" : "深色主题");
+      button.setAttribute("aria-label", label);
+      button.setAttribute("title", label);
     }
   }
   function apply() {
@@ -998,7 +999,18 @@
       });
     }
     const selector = document.getElementById("language");
-    if (selector) selector.value = language;
+    const names = {"zh-CN":"中文", ja:"日本語", en:"English", th:"ไทย"};
+    if (selector) {
+      const label = t("语言") + " · " + names[language];
+      selector.setAttribute("aria-label", label);
+      selector.setAttribute("title", label);
+    }
+    const flag = document.getElementById("language-flag");
+    if (flag) flag.setAttribute("href", "#flag-" + language);
+    for (const code of languages) {
+      const option = document.getElementById("language-" + code);
+      if (option) option.setAttribute("aria-pressed", String(code === language));
+    }
     applyTheme();
     document.title = t("离线 PDF 检索工作台");
   }
