@@ -41,7 +41,6 @@ def main() -> None:
     command = [sys.executable, str(root / "web/package_ocr_html.py"),
         "--template", str(root / "web/ocr-demo.template.html"),
         "--sdk", str(sdk), "--ui", str(root / "web/ocr-demo-ui.js"),
-        "--sponsor", str(root / "docs/assets/sponsor.jpg"),
         "--pdf-adapter", str(root / "web/pdf/lw_pdf_adapter.js"),
         "--pdfjs-version", "6.3.289", "--output", str(output)]
     for flag, filename in [("core", "pdf.min.mjs"), ("worker", "pdf.worker.min.mjs"),

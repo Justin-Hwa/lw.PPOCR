@@ -16,6 +16,34 @@ from playwright.sync_api import ConsoleMessage, Request, sync_playwright
 EXPECTED_FIRST_LINE = "纯臻营养护发素"
 
 
+def select_language(page, language: str) -> None:
+    """通过国旗菜单切换语言，同时验证纯图标与无障碍标签。"""
+    page.locator("#language").click()
+    choice = page.locator("#language-" + language)
+    assert choice.get_attribute("aria-label")
+    assert choice.inner_text() == ""
+    choice.click()
+    assert page.locator("#language-flag").get_attribute("href") == "#flag-" + language
+    assert page.locator("#language-picker").get_attribute("open") is None
+
+
+def assert_preview_drag(page) -> None:
+    """验证真实鼠标拖动滚动视口，释放后结束平移。"""
+    viewport = page.locator("#preview-viewport")
+    viewport.scroll_into_view_if_needed()
+    viewport.evaluate("(node) => { node.scrollLeft = 0; node.scrollTop = 0; }")
+    box = viewport.bounding_box()
+    assert box is not None
+    x, y = box["x"] + 160, box["y"] + 100
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x - 50, y - 40, steps=5)
+    assert viewport.evaluate("(node) => node.scrollLeft") >= 45
+    assert viewport.evaluate("(node) => node.classList.contains('panning')")
+    page.mouse.up()
+    assert not viewport.evaluate("(node) => node.classList.contains('panning')")
+
+
 def create_image_pdf(
     jpeg_path: Path, output: Path, page_count: int = 2, filter_name: str = "DCTDecode"
 ) -> None:
@@ -296,6 +324,89 @@ def main() -> int:
             json_path = json_download.path()
             assert json_path is not None
             assert json.loads(Path(json_path).read_text(encoding="utf-8")) == result
+
+            # UI preferences, collapsible cards, scroll bounds and a shared
+            # fullscreen preview must preserve the completed OCR result.
+            for language, title in [
+                ("en", "Offline PDF Search"), ("ja", "オフライン PDF 検索"),
+                ("th", "ค้นหา PDF แบบออฟไลน์"), ("zh-CN", "离线 PDF 检索工作台"),
+            ]:
+                select_language(page, language)
+                assert page.locator("html").get_attribute("lang") == language
+                assert page.locator("header h1").inner_text() == title
+                assert page.evaluate("window.__lwOcrTest.structuredResult()") == result
+            page.locator("#theme-toggle").click()
+            assert page.locator("html").get_attribute("data-theme") == "dark"
+            select_language(page, "en")
+            assert page.locator("#theme-toggle").get_attribute("aria-label") == "Light theme"
+            assert page.locator("#theme-toggle").inner_text().strip() == ""
+            assert page.locator("#theme-toggle .theme-sun").is_visible()
+            select_language(page, "zh-CN")
+            page.locator("#theme-toggle").click()
+            assert page.locator("html").get_attribute("data-theme") == "light"
+            assert page.locator("#theme-toggle .theme-moon").is_visible()
+            select_language(page, "ja")
+            for width in [1180, 820, 390]:
+                page.set_viewport_size({"width": width, "height": 900})
+                assert page.evaluate("""() => {
+                    const controls = [...document.querySelectorAll('.pdf-option select')];
+                    const rects = controls.map(n => n.getBoundingClientRect());
+                    const noOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+                    const singleLine = [...document.querySelectorAll('.preview-tools button, .result-actions button')]
+                      .every(n => getComputedStyle(n).whiteSpace === 'nowrap');
+                    return noOverflow && singleLine && rects.every(r => Math.abs(r.height - 44) < 1);
+                }""")
+            page.set_viewport_size({"width": 1180, "height": 900})
+            select_language(page, "zh-CN")
+            for region in ["source-region", "search-controls-region", "pdf-controls", "status-region"]:
+                summary = page.locator("#" + region + " > summary")
+                summary.click()
+                assert page.locator("#" + region).get_attribute("open") is None
+                summary.click()
+                assert page.locator("#" + region).get_attribute("open") is not None
+            for name in ["preview", "results"]:
+                page.locator("#" + name + "-collapse").click()
+                assert page.locator("#" + name + "-content").is_hidden()
+                page.locator("#" + name + "-collapse").click()
+                assert page.locator("#" + name + "-content").is_visible()
+            assert page.evaluate("""() => {
+                const outer = document.querySelector('.result-card').getBoundingClientRect();
+                const inner = document.querySelector('#results').getBoundingClientRect();
+                return Math.abs(outer.bottom - inner.bottom - 1) < 2;
+            }""")
+            assert page.locator("#pdf-progress-bar").get_attribute("aria-valuenow") == "2"
+            assert page.locator("#pdf-progress-bar").get_attribute("aria-valuemax") == "2"
+            assert page.locator("#pdf-progress").is_visible()
+            assert page.locator("#pdf-progress").get_attribute("data-running") == "false"
+            page.locator("#zoom-in").click()
+            assert page.locator("#zoom-label").inner_text() == "125%"
+            assert_preview_drag(page)
+            page.locator("#preview-fullscreen").click()
+            assert page.locator("#preview-dialog").is_visible()
+            assert page.locator("#preview-dialog #canvas").count() == 1
+            page.locator("#preview-prev").click()
+            page.wait_for_function("() => !document.querySelector('#preview-next').disabled")
+            assert page.evaluate("window.__lwOcrTest.snapshot().pdfCurrentPage") == 1
+            page.locator("#zoom-in").click()
+            assert page.locator("#zoom-label").inner_text() == "150%"
+            assert_preview_drag(page)
+            page.locator("#toggle-overlay").click()
+            assert page.locator("#overlay").is_visible()
+            assert page.evaluate("""() => {
+                const canvas = document.querySelector('#canvas').getBoundingClientRect();
+                const overlay = document.querySelector('#overlay').getBoundingClientRect();
+                return Math.abs(canvas.width - overlay.width) < 1 &&
+                       Math.abs(canvas.height - overlay.height) < 1;
+            }""")
+            page.locator("#preview-next").click()
+            page.wait_for_function("() => !document.querySelector('#preview-prev').disabled")
+            page.keyboard.press("Escape")
+            assert page.locator("#preview-dialog").is_hidden()
+            assert page.locator("#preview-region #canvas").count() == 1
+            page.locator("#zoom-fit").click()
+            assert page.locator("#zoom-label").inner_text() == "100%"
+            page.locator("#toggle-overlay").click()
+            assert page.evaluate("window.__lwOcrTest.structuredResult()") == result
 
             # Repeat one page after capacities are warm; the WASM heap must not
             # continue to grow for the same rendered geometry.

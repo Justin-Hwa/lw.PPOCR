@@ -423,7 +423,6 @@ if(EMSCRIPTEN)
             --template "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo.template.html"
             --sdk "${LW_PPOCR_C_WEB_SDK}"
             --ui "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo-ui.js"
-            --sponsor "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/sponsor.jpg"
             ${LW_PPOCR_C_WEB_HTML_PDF_ARGS}
             --output "${LW_PPOCR_C_WEB_HTML}"
         DEPENDS
@@ -431,10 +430,10 @@ if(EMSCRIPTEN)
             "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo.template.html"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo-ui.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf-search.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/i18n.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf/text_geometry.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_pdf_text_resources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/package_ocr_html.py"
-            "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/sponsor.jpg"
             ${LW_PPOCR_C_WEB_HTML_PDF_DEPENDS}
         COMMENT "Packaging the standalone offline OCR HTML demo"
         VERBATIM)

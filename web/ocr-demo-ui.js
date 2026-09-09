@@ -8,10 +8,12 @@
 (function() {
   "use strict";
 
+  const t = (...args) => LwI18n.t(...args);
+  function setStatus(render) { statusNode._renderStatus = render; statusNode.textContent = render(); }
   const IMAGE_MAX_SIDE = 1600;
   const PDF_MAX_PIXELS = 5000000;
-  const PDF_PREVIEW_MAX_PIXELS = 1500000;
-  const PDF_PREVIEW_DPI = 96;
+  const PDF_PREVIEW_MAX_PIXELS = 3000000;
+  const PDF_PREVIEW_DPI = 144;
 
   const searchInput = document.getElementById("search-queries");
   const searchCase = document.getElementById("search-case");
@@ -21,6 +23,7 @@
   const searchCoverage = document.getElementById("search-coverage");
   const pdfMode = document.getElementById("pdf-mode");
   let selectedMatch = null;
+  let latestProgress = null;
   const fileInput = document.getElementById("file");
   const cameraInput = document.getElementById("camera");
   const dropzone = document.getElementById("dropzone");
@@ -77,6 +80,177 @@
   let pdfResultView = "page";
   let overlayVisible = true;
 
+
+  const previewContent = document.getElementById("preview-content");
+  const previewViewport = document.getElementById("preview-viewport");
+  const previewStage = document.getElementById("preview-stage");
+  const previewDialog = document.getElementById("preview-dialog");
+  const fullscreenButton = document.getElementById("preview-fullscreen");
+  const zoomInButton = document.getElementById("zoom-in");
+  const zoomOutButton = document.getElementById("zoom-out");
+  const zoomFitButton = document.getElementById("zoom-fit");
+  const previewPrev = document.getElementById("preview-prev");
+  const previewNext = document.getElementById("preview-next");
+  let zoom = 1;
+  let fitPreview = true;
+  let returnFocus = null;
+  let previewPan = null;
+
+  function endPreviewPan(event) {
+    if (!previewPan || (event && event.pointerId !== previewPan.id)) return;
+    const id = previewPan.id;
+    previewPan = null;
+    previewViewport.classList.remove("panning");
+    if (previewViewport.hasPointerCapture(id)) previewViewport.releasePointerCapture(id);
+  }
+  previewStage.addEventListener("pointerdown", event => {
+    // 触摸屏使用浏览器原生滚动和双指缩放；鼠标与触控笔使用指针捕获。
+    if (!source || previewPan || event.button !== 0 || event.isPrimary === false ||
+        event.pointerType === "touch") return;
+    previewViewport.setPointerCapture(event.pointerId);
+    previewPan = {id: event.pointerId, x: event.clientX, y: event.clientY};
+    previewViewport.classList.add("panning");
+    event.preventDefault();
+  });
+  previewViewport.addEventListener("pointermove", event => {
+    if (!previewPan || event.pointerId !== previewPan.id) return;
+    if (!(event.buttons & 1)) { endPreviewPan(event); return; }
+    // 移动滚动位置而非画布坐标，确保 PDF 与标注始终同步。
+    previewViewport.scrollLeft += previewPan.x - event.clientX;
+    previewViewport.scrollTop += previewPan.y - event.clientY;
+    previewPan.x = event.clientX;
+    previewPan.y = event.clientY;
+    event.preventDefault();
+  });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(type =>
+    previewViewport.addEventListener(type, endPreviewPan));
+  window.addEventListener("blur", () => endPreviewPan());
+  previewStage.addEventListener("dragstart", event => event.preventDefault());
+
+  function setRegionOpen(name, open) {
+    if (name === "preview" && !open) endPreviewPan();
+    document.getElementById(name + "-collapse").setAttribute("aria-expanded", String(open));
+    document.getElementById(name + "-content").hidden = !open;
+    document.getElementById(name === "preview" ? "preview-region" : "results-region")
+      .classList.toggle("collapsed", !open);
+    if (name === "preview" && open) applyZoom();
+  }
+  function applyZoom() {
+    previewStage.classList.toggle("pan-ready", Boolean(source));
+    // Zoom is relative to the viewport width, independent of OCR render DPI.
+    const width = previewViewport.clientWidth;
+    if (width > 0) {
+      const padding = parseFloat(getComputedStyle(previewViewport).paddingLeft) +
+        parseFloat(getComputedStyle(previewViewport).paddingRight);
+      previewStage.style.width = Math.max(1, Math.round((width - padding) * zoom)) + "px";
+    }
+    document.getElementById("zoom-label").textContent = Math.round(zoom * 100) + "%";
+    zoomInButton.disabled = !source || zoom >= 4;
+    zoomOutButton.disabled = !source || zoom <= .25;
+    zoomFitButton.disabled = !source;
+    fullscreenButton.disabled = !source;
+    zoomFitButton.setAttribute("aria-pressed", String(fitPreview));
+  }
+  function changeZoom(delta) {
+    if (!source) return;
+    endPreviewPan();
+    zoom = Math.max(.25, Math.min(4, Math.round((zoom + delta) * 100) / 100));
+    fitPreview = false;
+    applyZoom();
+  }
+  function updatePreviewControls(pdf) {
+    document.getElementById("preview-page-nav").hidden = !pdf;
+    document.getElementById("preview-page-label").textContent = pdf ? pdf.currentPage + " / " + pdf.pageCount : "0 / 0";
+    previewPrev.disabled = !pdf || running || pdfPreviewRunning || pdf.currentPage <= 1;
+    previewNext.disabled = !pdf || running || pdfPreviewRunning || pdf.currentPage >= pdf.pageCount;
+    applyZoom();
+  }
+  function restorePreview() {
+    if (previewContent.parentNode !== document.getElementById("dialog-content")) return;
+    endPreviewPan();
+    document.getElementById("preview-region").appendChild(previewContent);
+    fullscreenButton.hidden = false;
+    document.body.classList.remove("preview-modal-open");
+    applyZoom();
+    if (returnFocus) returnFocus.focus();
+    returnFocus = null;
+  }
+  function closePreview() {
+    if (previewDialog.open) previewDialog.close();
+    restorePreview();
+  }
+  function openPreview() {
+    if (!source || previewDialog.open) return;
+    endPreviewPan();
+    returnFocus = document.activeElement;
+    setRegionOpen("preview", true);
+    document.getElementById("dialog-content").appendChild(previewContent);
+    fullscreenButton.hidden = true;
+    previewDialog.showModal();
+    document.body.classList.add("preview-modal-open");
+    applyZoom();
+    document.getElementById("preview-close").focus();
+  }
+  function updateProgress(completed, total, state) {
+    latestProgress = {completed, total, state};
+    pdfProgress.hidden = false;
+    pdfProgress.dataset.running = String(state === "processing");
+    pdfProgressBar.setAttribute("aria-valuemax", String(total));
+    pdfProgressBar.setAttribute("aria-valuenow", String(completed));
+    const percent = total ? Math.round(completed / total * 100) : 0;
+    document.getElementById("progress-fill").style.width = percent + "%";
+    pdfProgressLabel.textContent = t("进度格式", t("进度" + state), completed, total, percent);
+    pdfProgressBar.setAttribute("aria-valuetext", pdfProgressLabel.textContent);
+  }
+  ["preview", "results"].forEach(name => {
+    const button = document.getElementById(name + "-collapse");
+    button.addEventListener("click", () => setRegionOpen(name, button.getAttribute("aria-expanded") !== "true"));
+  });
+  zoomInButton.addEventListener("click", () => changeZoom(.25));
+  zoomOutButton.addEventListener("click", () => changeZoom(-.25));
+  zoomFitButton.addEventListener("click", () => { endPreviewPan(); zoom = 1; fitPreview = true; applyZoom(); });
+  fullscreenButton.addEventListener("click", openPreview);
+  document.getElementById("preview-close").addEventListener("click", closePreview);
+  previewDialog.addEventListener("close", restorePreview);
+  previewPrev.addEventListener("click", () => navigatePdf(-1).catch(error => setStatus(() => t("图片预览失败：") + error)));
+  previewNext.addEventListener("click", () => navigatePdf(1).catch(error => setStatus(() => t("图片预览失败：") + error)));
+  window.addEventListener("resize", applyZoom);
+  if (window.ResizeObserver) new ResizeObserver(applyZoom).observe(previewViewport);
+  const languagePicker = document.getElementById("language-picker");
+  for (const code of LwI18n.languages) {
+    document.getElementById("language-" + code).addEventListener("click", () => {
+      LwI18n.setLanguage(code);
+      languagePicker.open = false;
+      document.getElementById("language").focus();
+    });
+  }
+  languagePicker.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      languagePicker.open = false;
+      document.getElementById("language").focus();
+      event.preventDefault();
+    }
+  });
+  document.addEventListener("click", event => {
+    if (!languagePicker.contains(event.target)) languagePicker.open = false;
+  });
+  document.getElementById("theme-toggle").addEventListener("click", () => LwI18n.setTheme(LwI18n.theme === "dark" ? "light" : "dark"));
+  window.addEventListener("lw:language", () => {
+    setOverlayVisible(overlayVisible);
+    runButton.textContent = running && source && source.kind === "pdf" ? t("停止") : t("开始识别");
+    updatePdfControls();
+    if (engine) updateStats(engine.getStatus(), latestStatsResult);
+    if (latestProgress) updateProgress(latestProgress.completed, latestProgress.total, latestProgress.state);
+    if (lastResults) {
+      if (lastResults.schema_version === 2) renderPdfResultView();
+      else renderResults(lastResults.lines);
+    }
+    refreshSearch();
+    if (statusNode._renderStatus) statusNode.textContent = statusNode._renderStatus();
+  });
+  LwI18n.apply();
+  applyZoom();
+
   function clipboardExtension(type) {
     switch (String(type || "").toLowerCase()) {
       case "image/jpeg": return ".jpg";
@@ -125,7 +299,7 @@
     overlayVisible = Boolean(visible);
     if (overlayVisible) overlay.removeAttribute("hidden");
     else overlay.setAttribute("hidden", "");
-    toggleOverlayButton.textContent = overlayVisible ? "隐藏标注" : "显示标注";
+    toggleOverlayButton.textContent = overlayVisible ? t("隐藏标注") : t("显示标注");
     toggleOverlayButton.setAttribute("aria-pressed", String(overlayVisible));
   }
 
@@ -134,14 +308,11 @@
     const dropTitle = dropzone.querySelector("strong");
     const dropHint = dropzone.querySelector("span");
     const galleryLabel = document.querySelector('.source-button[for="file"]');
-    if (dropTitle) dropTitle.textContent = "选择、拖入或粘贴图片";
-    if (dropHint) dropHint.textContent =
+    if (dropTitle) dropTitle.dataset.i18n = "选择、拖入或粘贴图片";
+    if (dropHint) dropHint.dataset.i18n =
       "支持 JPG、PNG、BMP、WebP，也可直接 Ctrl+V / ⌘V 粘贴截图，所有文件仅在本机处理";
-    if (galleryLabel) galleryLabel.textContent = "从相册选择";
-    const headerHint = document.querySelector("header p");
-    if (headerHint) {
-      headerHint.textContent = "纯浏览器本地推理 · 模型和 WASM 已内嵌 · 图片不会上传到网络";
-    }
+    if (galleryLabel) galleryLabel.dataset.i18n = "从相册选择";
+    LwI18n.apply();
   }
 
   function sourceKind(file) {
@@ -160,16 +331,16 @@
   function pdfErrorMessage(error) {
     const code = error && error.code ? error.code : "LW_PDF_UNKNOWN";
     const messages = {
-      LW_PDF_INIT_FAILED: "当前浏览器无法初始化 PDF 组件，请更新浏览器或改用系统 Chrome/Safari 打开。",
-      LW_PDF_INPUT_REQUIRED: "浏览器没有提供可读取的 PDF 文件。",
-      LW_PDF_READ_FAILED: "当前浏览器无法读取所选 PDF，请尝试系统 Chrome/Safari 或重新选择文件。",
-      LW_PDF_READ_CANCELLED: "PDF 文件读取已取消。",
-      LW_PDF_PASSWORD_REQUIRED: "此 PDF 已加密，当前版本暂不支持密码输入。",
-      LW_PDF_PASSWORD_INVALID: "PDF 密码错误。",
-      LW_PDF_RENDER_FAILED: "PDF 已打开，但首页渲染失败；浏览器兼容性或可用内存可能不足。",
-      LW_PDF_LOAD_FAILED: "PDF 解析失败：文件可能损坏，或当前浏览器不支持该 PDF。"
+      LW_PDF_INIT_FAILED: t("当前浏览器无法初始化 PDF 组件，请更新浏览器或改用系统 Chrome/Safari 打开。"),
+      LW_PDF_INPUT_REQUIRED: t("浏览器没有提供可读取的 PDF 文件。"),
+      LW_PDF_READ_FAILED: t("当前浏览器无法读取所选 PDF，请尝试系统 Chrome/Safari 或重新选择文件。"),
+      LW_PDF_READ_CANCELLED: t("PDF 文件读取已取消。"),
+      LW_PDF_PASSWORD_REQUIRED: t("此 PDF 已加密，当前版本暂不支持密码输入。"),
+      LW_PDF_PASSWORD_INVALID: t("PDF 密码错误。"),
+      LW_PDF_RENDER_FAILED: t("PDF 已打开，但首页渲染失败；浏览器兼容性或可用内存可能不足。"),
+      LW_PDF_LOAD_FAILED: t("PDF 解析失败：文件可能损坏，或当前浏览器不支持该 PDF。")
     };
-    return (messages[code] || "PDF 打开失败，请查看诊断信息。") + "（" + code + "）";
+    return (messages[code] || t("PDF 打开失败，请查看诊断信息。")) + "（" + code + "）";
   }
   function showPdfDiagnostics(error) {
     const status = pdfStatus() || {};
@@ -197,6 +368,7 @@
   function clearLastResults() {
     lastResults = null;
     lastTimingBreakdown = null;
+    latestStatsResult = null;
     setExportEnabled(false);
     pdfResultTabs.hidden = true;
     overlay.replaceChildren();
@@ -260,31 +432,31 @@
     const text = plainTextResult();
     await copyTextValue(text);
     if (lastResults === result) {
-      statusNode.textContent = "已复制 " + resultLineCount(result) + " 行文本。";
+      setStatus(() => t("已复制 {0} 行文本。", resultLineCount(result)));
     }
   }
   async function shareResult() {
     if (!lastResults || !navigator.share) return;
     const result = lastResults;
     await navigator.share({
-      title: exportBaseName(result.source) + " 识别结果",
+      title: exportBaseName(result.source) + " " + t("识别结果"),
       text: plainTextResult()
     });
     if (lastResults === result) {
-      statusNode.textContent = "已分享 " + resultLineCount(result) + " 行文本。";
+      setStatus(() => t("已分享 {0} 行文本。", resultLineCount(result)));
     }
   }
   function exportTxt() {
     if (!lastResults) return;
     const text = plainTextResult();
     downloadResult(text ? text + "\n" : "", "text/plain;charset=utf-8", ".txt");
-    statusNode.textContent = "已导出 " + resultLineCount() + " 行 TXT。";
+    setStatus(() => t("已导出 {0} 行 {1}。", resultLineCount(), "TXT"));
   }
   function exportJson() {
     if (!lastResults) return;
     downloadResult(JSON.stringify(lastResults, null, 2) + "\n",
       "application/json;charset=utf-8", ".json");
-    statusNode.textContent = "已导出 " + resultLineCount() + " 行 JSON。";
+    setStatus(() => t("已导出 {0} 行 {1}。", resultLineCount(), "JSON"));
   }
   function setMobilePanel(panel) {
     workspace.dataset.mobilePanel = panel;
@@ -295,11 +467,13 @@
     showResultsButton.setAttribute("aria-pressed", String(!showingImage));
   }
   function drawPreview(image, width, height) {
+    endPreviewPan();
     canvas.width = width;
     canvas.height = height;
     canvas.getContext("2d").drawImage(image, 0, 0, width, height);
     overlay.setAttribute("viewBox", "0 0 " + width + " " + height);
     overlay.replaceChildren();
+    applyZoom();
   }
   function drawResults(lines, width, height, xScale = 1, yScale = 1) {
     const namespace = "http://www.w3.org/2000/svg";
@@ -333,14 +507,14 @@
   }
   function renderResults(lines, pageNumber = null, pageCount = null) {
     const heading = pageNumber === null ? "" :
-      '<div class="page-heading">Page ' + pageNumber + " / " + pageCount + "</div>";
+      '<div class="page-heading">' + t('页码', pageNumber, pageCount) + '</div>';
     resultsNode.innerHTML = heading + (lines.length ? lines.map((line, index) =>
       '<div class="line" data-line-index="' + index + '"><div class="index">' +
       String(index + 1).padStart(2, "0") + '</div><div class="text"><b>' +
       escapeHtml(line.text) + '</b><div class="score">' +
-      (line.source === "text-layer" ? "PDF 文字层 · 置信度不适用" :
-        "OCR 行级识别 " + (Number.isFinite(line.rec_score) ? (line.rec_score * 100).toFixed(1) + "%" : "分数不可用")) + "</div></div></div>"
-    ).join("") : '<div class="empty">未检测到文本。</div>');
+      (line.source === "text-layer" ? t("PDF 文字层 · 置信度不适用") :
+        t("OCR 行级识别 ") + (Number.isFinite(line.rec_score) ? (line.rec_score * 100).toFixed(1) + "%" : t("分数不可用"))) + "</div></div></div>"
+    ).join("") : '<div class="empty">' + t("未检测到文本。") + '</div>');
   }
 
   function findPdfPageResult(pageNumber) {
@@ -398,9 +572,10 @@
   function updatePdfControls() {
     const pdf = source && source.kind === "pdf" ? source : null;
     pdfControls.hidden = !pdf;
-    previewTitle.textContent = pdf ? "PDF 页面预览" : "图像预览";
+    updatePreviewControls(pdf);
+    previewTitle.textContent = pdf ? t("PDF 页面预览") : t("图像预览");
     if (!pdf) return;
-    pdfMeta.textContent = (pdf.file.name || "document.pdf") + " · " + pdf.pageCount + " 页";
+    pdfMeta.textContent = t("{0} · {1} 页", pdf.file.name || "document.pdf", pdf.pageCount);
     pdfPageLabel.textContent = pdf.currentPage + " / " + pdf.pageCount;
     pdfPrev.disabled = running || pdfPreviewRunning || pdf.currentPage <= 1;
     pdfNext.disabled = running || pdfPreviewRunning || pdf.currentPage >= pdf.pageCount;
@@ -416,7 +591,7 @@
     pdfSource.currentPage = pageNumber;
     updatePdfControls();
     runButton.disabled = true;
-    statusNode.textContent = "正在渲染第 " + pageNumber + " / " + pdfSource.pageCount + " 页预览…";
+    setStatus(() => t("正在渲染第 {0} / {1} 页预览…", pageNumber, pdfSource.pageCount));
     let rendered = null;
     try {
       rendered = await pdfSource.document.renderPage(pageNumber, {
@@ -435,10 +610,9 @@
       drawSearchHighlights();
       const compatibility = pdfStatus() &&
         pdfStatus().worker_backend === "main-thread" ? " · PDF 兼容模式" : "";
-      statusNode.textContent = pageResult ?
-        "第 " + pageNumber + " 页已识别，共 " + pageResult.lines.length + " 行" +
-          compatibility + "。" :
-        "PDF 已准备好" + compatibility + "，点击“开始识别”。";
+      setStatus(() => pageResult ?
+        t("第 {0} 页已识别，共 {1} 行{2}。", pageNumber, pageResult.lines.length, t(compatibility)) :
+        t("PDF 已准备好") + t(compatibility) + t("，点击“开始识别”。"));
     } catch (error) {
       if (!(error && error.code === "LW_PDF_CANCELLED")) throw error;
     } finally {
@@ -457,7 +631,11 @@
   }
   async function selectFile(file) {
     if (running) return null;
+    endPreviewPan();
     const sequence = ++previewSequence;
+    closePreview();
+    zoom = 1; fitPreview = true;
+    latestProgress = null; pdfProgress.hidden = true;
     const previous = source;
     source = null;
     preparedSource = null;
@@ -468,13 +646,13 @@
     updatePdfControls();
     await disposeSource(previous);
     if (!file) {
-      statusNode.textContent = "就绪，请选择图片或 PDF。";
-      resultsNode.innerHTML = '<div class="empty">选择文件后，这里会显示识别文本。</div>';
+      setStatus(() => t("就绪，请选择图片或 PDF。"));
+      resultsNode.innerHTML = '<div class="empty" data-i18n="选择文件后，这里会显示识别文本。">' + t("选择文件后，这里会显示识别文本。") + '</div>';
       return null;
     }
     if (sourceKind(file) === "image") {
       try {
-        statusNode.textContent = "正在准备图片…";
+        setStatus(() => t("正在准备图片…"));
         const prepared = await decodeImagePreview(file);
         if (sequence !== previewSequence) return null;
         source = {
@@ -484,26 +662,26 @@
           originalWidth,
           originalHeight
         };
-        resultsNode.innerHTML = '<div class="empty">图片已准备好，点击“开始识别”执行 OCR。</div>';
-        statusNode.textContent = "已选择：" + (file.name || "image") + " · 处理尺寸 " +
-          prepared.width + "×" + prepared.height + "，点击“开始识别”。";
+        updatePdfControls();
+        resultsNode.innerHTML = '<div class="empty" data-i18n="图片已准备好，点击“开始识别”执行 OCR。">' + t("图片已准备好，点击“开始识别”执行 OCR。") + '</div>';
+        setStatus(() => t("已选择：{0} · {1}×{2}，点击“开始识别”。", file.name || "image", prepared.width, prepared.height));
         runButton.disabled = !engine;
         return preparedSource;
       } catch (error) {
         if (sequence === previewSequence) {
           source = null;
           preparedSource = null;
-          statusNode.textContent = "图片预览失败：" + error;
+          setStatus(() => t("图片预览失败：") + error);
         }
         throw error;
       }
     }
     if (!window.LwPdf) {
-      statusNode.textContent = "当前 HTML 构建未包含 PDF 支持。";
+      setStatus(() => t("当前 HTML 构建未包含 PDF 支持。"));
       throw new Error("PDF support is disabled");
     }
     const started = performance.now();
-    statusNode.textContent = "正在打开 PDF…";
+    setStatus(() => t("正在打开 PDF…"));
     let documentHandle = null;
     try {
       documentHandle = await LwPdf.open(file);
@@ -523,7 +701,7 @@
         pdfLoadMilliseconds: prepareMilliseconds
       };
       updatePdfControls();
-      resultsNode.innerHTML = '<div class="empty">PDF 已准备好，点击“开始识别”执行 OCR。</div>';
+      resultsNode.innerHTML = '<div class="empty" data-i18n="PDF 已准备好，点击“开始识别”执行 OCR。">' + t("PDF 已准备好，点击“开始识别”执行 OCR。") + '</div>';
       await renderPdfPreview(1);
       runButton.disabled = !engine;
       return source;
@@ -540,7 +718,7 @@
         updatePdfControls();
         const message = pdfErrorMessage(error);
         const diagnostics = showPdfDiagnostics(error);
-        statusNode.textContent = message;
+        setStatus(() => pdfErrorMessage(error));
         document.dispatchEvent(new CustomEvent("lwppocr:error", {
           detail: {
             phase: error && error.phase ? error.phase : "pdf-open",
@@ -556,15 +734,13 @@
 
   async function selectClipboardImage(file) {
     if (running) {
-      statusNode.textContent = "正在识别，请稍后再粘贴图片。";
+      setStatus(() => t("正在识别，请稍后再粘贴图片。"));
       return null;
     }
     const normalized = normalizeClipboardImage(file);
     const result = await selectFile(normalized);
     if (result && source && source.kind === "image") {
-      statusNode.textContent = "已从剪贴板加载图片 · " +
-        source.originalWidth + "×" + source.originalHeight +
-        "，点击“开始识别”。";
+      setStatus(() => t("已从剪贴板加载图片 · {0}×{1}，点击“开始识别”。", source.originalWidth, source.originalHeight));
     }
     return result;
   }
@@ -574,7 +750,7 @@
     if (!file) return;
     event.preventDefault();
     selectClipboardImage(file).catch(error => {
-      statusNode.textContent = "剪贴板图片预览失败：" + error;
+      setStatus(() => t("剪贴板图片预览失败：") + error);
     });
   }
 
@@ -624,33 +800,27 @@
       lines
     };
   }
+  let latestStatsResult = null;
   function updateStats(status, result) {
+    latestStatsResult = result || null;
     if (source && source.kind === "pdf" && lastResults && lastResults.schema_version === 2) {
       const timing = lastResults.timing;
-      statsNode.textContent = lastResults.document.processed_pages + " / " +
-        lastResults.document.page_count + " 页 · " + resultLineCount() + " 行 · PDF 打开 " +
-        timing.pdf_load_ms.toFixed(0) + " ms · 页面渲染 " +
-        timing.render_ms.toFixed(0) + " ms · OCR " +
-        timing.inference_ms.toFixed(0) + " ms · 总计 " + timing.total_ms.toFixed(0) + " ms";
+      statsNode.textContent = t("统计PDF", lastResults.document.processed_pages, lastResults.document.page_count,
+        resultLineCount(), timing.pdf_load_ms.toFixed(0), timing.render_ms.toFixed(0),
+        timing.inference_ms.toFixed(0), timing.total_ms.toFixed(0));
     } else if (result) {
-      statsNode.textContent = "第 " + runCount + " 次 · " +
-        (status.backend === "worker" ? "后台线程" : "兼容模式") +
-        " · 图像准备 " + prepareMilliseconds.toFixed(0) + " ms · 推理 " +
-        result.timing.inference_ms.toFixed(0) + " ms · 总计 " +
-        result.timing.total_ms.toFixed(0) + " ms · CLS " +
-        (result.options.use_cls ? "开启" : "关闭");
+      statsNode.textContent = t("统计图片", runCount, t(status.backend === "worker" ? "后台线程" : "兼容模式"),
+        prepareMilliseconds.toFixed(0), result.timing.inference_ms.toFixed(0), result.timing.total_ms.toFixed(0),
+        t(result.options.use_cls ? "开启" : "关"));
     } else {
-      statsNode.textContent = "引擎已就绪 · " +
-        (status.backend === "worker" ? "后台线程" : "兼容模式") +
-        " · 输出 " + status.maxLineCapacity + " 行/" +
-        status.maxTextCapacity + " 字节 · CLS " +
-        (clsInput.checked ? "开启" : "关闭");
+      statsNode.textContent = t("统计就绪", t(status.backend === "worker" ? "后台线程" : "兼容模式"),
+        status.maxLineCapacity, status.maxTextCapacity, t(clsInput.checked ? "开启" : "关"));
     }
   }
   async function createEngine() {
     clsInput.disabled = true;
     readingOrderInput.disabled = true;
-    statusNode.textContent = "正在加载 WASM 和模型…";
+    setStatus(() => t("正在加载 WASM 和模型…"));
     if (window.__lwOcrBootStatus) {
       window.__lwOcrBootStatus.setPhase("正在初始化 WASM 和模型");
     }
@@ -666,8 +836,8 @@
       if (window.__lwOcrBootStatus) window.__lwOcrBootStatus.finish();
       updateStats(instance.getStatus());
       runButton.disabled = !source;
-      statusNode.textContent = source ?
-        "文件已准备好，点击“开始识别”。" : "就绪，请选择图片或 PDF。";
+      setStatus(() => source ?
+        t("文件已准备好，点击“开始识别”。") : t("就绪，请选择图片或 PDF。"));
       document.dispatchEvent(new CustomEvent("lwppocr:ready", {
         detail: {backend: instance.getStatus().backend}
       }));
@@ -687,13 +857,14 @@
   }
   function setRunningState(value, canStop = false) {
     running = value;
+    if (value) document.getElementById("status-region").open = true;
     fileInput.disabled = value;
     cameraInput.disabled = value;
     clsInput.disabled = value;
     readingOrderInput.disabled = value;
     runButton.disabled = value && !canStop;
     runButton.classList.toggle("stop", value && canStop);
-    runButton.textContent = value && canStop ? "停止" : "开始识别";
+    runButton.textContent = value && canStop ? t("停止") : t("开始识别");
     document.body.toggleAttribute("aria-busy", value);
     refreshSearch();
     updatePdfControls();
@@ -702,7 +873,8 @@
     if (!engine || !source || source.kind !== "image" || running) return null;
     setRunningState(true);
     clearLastResults();
-    statusNode.textContent = "正在识别，页面仍可正常操作…";
+    updateProgress(0, 1, "processing");
+    setStatus(() => t("正在识别，页面仍可正常操作…"));
     try {
       const result = await engine.recognize(source.preparedCanvas, {
         readingOrder: readingOrderInput.value
@@ -713,6 +885,7 @@
       refreshSearch();
       renderResults(lastResults.lines);
       setExportEnabled(true);
+      updateProgress(1, 1, "complete");
       runCount += 1;
       setMobilePanel("results");
       const uiMilliseconds = performance.now() - uiStarted;
@@ -724,11 +897,12 @@
       lastResults.elapsed_ms = Number((prepareMilliseconds +
         result.timing.total_ms + uiMilliseconds).toFixed(3));
       updateStats(engine.getStatus(), result);
-      statusNode.textContent = "完成：" + lastResults.lines.length + " 行";
+      setStatus(() => t("完成：{0} 行", lastResults.lines.length));
       document.dispatchEvent(new CustomEvent("lwppocr:result", {detail: lastResults}));
       return lastResults;
     } catch (error) {
-      statusNode.textContent = "识别失败：" + error;
+      updateProgress(0, 1, "error");
+      setStatus(() => t("识别失败：") + error);
       document.dispatchEvent(new CustomEvent("lwppocr:error", {
         detail: {phase: "recognize", message: String(error)}
       }));
@@ -778,10 +952,7 @@
     };
     pdfResultTabs.hidden = false;
     pdfResultView = "page";
-    pdfProgress.hidden = false;
-    pdfProgressBar.max = pages.length;
-    pdfProgressBar.value = 0;
-    pdfProgressLabel.textContent = "0 / " + pages.length;
+    updateProgress(0, pages.length, "processing");
     setRunningState(true, true);
     setExportEnabled(false);
     try {
@@ -790,8 +961,7 @@
         const pageNumber = pages[pageIndex];
         pdfSource.currentPage = pageNumber;
         updatePdfControls();
-        statusNode.textContent = "正在处理第 " + pageNumber + " / " +
-          pdfSource.pageCount + " 页：渲染…";
+        setStatus(() => t("正在处理第 {0} / {1} 页：渲染…", pageNumber, pdfSource.pageCount));
         let rendered = null;
         try {
           const renderStarted = performance.now();
@@ -802,8 +972,7 @@
           const renderMilliseconds = performance.now() - renderStarted;
           renderTotal += renderMilliseconds;
           if (pdfSource.cancelled || source !== pdfSource) break;
-          statusNode.textContent = "正在处理第 " + pageNumber + " / " +
-            pdfSource.pageCount + " 页：OCR…";
+          setStatus(() => t("正在处理第 {0} / {1} 页：读取文字 / OCR…", pageNumber, pdfSource.pageCount));
           const mode = lastResults.options.pdf_mode;
           let textLines = [], textError = null;
           if (mode !== "ocr") {
@@ -839,8 +1008,7 @@
           lastResults.timing.total_ms = Number((pdfSource.pdfLoadMilliseconds +
             renderTotal + inferenceTotal + uiTotal).toFixed(3));
           setExportEnabled(true);
-          pdfProgressBar.value = pageIndex + 1;
-          pdfProgressLabel.textContent = (pageIndex + 1) + " / " + pages.length;
+          updateProgress(pageIndex + 1, pages.length, "processing");
           updateStats(engine.getStatus());
           await nextAnimationFrame();
         } catch (error) {
@@ -856,14 +1024,15 @@
         performance.now() - runStarted).toFixed(3));
       lastTimingBreakdown = JSON.parse(JSON.stringify(lastResults.timing));
       const stopped = pdfSource.cancelled;
+      updateProgress(lastResults.pages.length, pages.length, stopped ? "stopped" : "complete");
       lastResults.document.status = stopped ? "stopped" :
         lastResults.pages.length === pdfSource.pageCount ? "complete" : "partial";
       refreshSearch();
-      statusNode.textContent = stopped ?
-        "已停止：完成 " + lastResults.document.processed_pages + " / " +
-          pdfSource.pageCount + " 页。" :
-        "完成：" + lastResults.document.processed_pages + " 页，共 " +
-          resultLineCount() + " 行。";
+      const completedCount = lastResults.document.processed_pages;
+      const lineCount = resultLineCount();
+      setStatus(() => stopped ?
+        t("已停止：完成 {0} / {1} 页。", completedCount, pdfSource.pageCount) :
+        t("完成：{0} 页，共 {1} 行。", completedCount, lineCount));
       if (lastResults.pages.length) {
         document.dispatchEvent(new CustomEvent("lwppocr:result", {detail: lastResults}));
       } else {
@@ -871,15 +1040,15 @@
       }
       return lastResults;
     } catch (error) {
+      updateProgress(lastResults ? lastResults.pages.length : 0, pages.length, "error");
       if (lastResults) { lastResults.document.status = "error"; refreshSearch(); }
-      statusNode.textContent = "PDF 识别失败：" + error;
+      setStatus(() => t("PDF 识别失败：") + error);
       document.dispatchEvent(new CustomEvent("lwppocr:error", {
         detail: {phase: "pdf-recognize", code: error && error.code, message: String(error)}
       }));
       console.error(error);
       throw error;
     } finally {
-      pdfProgress.hidden = true;
       setRunningState(false);
       runButton.disabled = !(engine && source);
       updatePdfControls();
@@ -894,7 +1063,7 @@
     source.cancelled = true;
     source.document.cancelRender();
     runButton.disabled = true;
-    statusNode.textContent = "正在停止；若当前页已进入 OCR，将在本页完成后停止…";
+    setStatus(() => t("正在停止；若当前页已进入 OCR，将在本页完成后停止…"));
   }
   async function navigatePdf(delta) {
     if (!source || source.kind !== "pdf" || running || pdfPreviewRunning) return;
@@ -936,9 +1105,9 @@
   }
   function matchLabel(hit) {
     return hit.confidence === null ? (hit.source === "text-layer" ?
-      "文字层匹配 · 置信度不适用" : "OCR 分数不可用") :
-      "OCR 行级置信度 " + (hit.confidence*100).toFixed(1) + "%" +
-      (hit.line_indices.length > 1 ? "（相关行最低分）" : "");
+      t("文字层匹配 · 置信度不适用") : t("OCR 分数不可用")) :
+      t("OCR 行级置信度 ") + (hit.confidence*100).toFixed(1) + "%" +
+      (hit.line_indices.length > 1 ? t("（相关行最低分）") : "");
   }
   function drawSearchHighlights() {
     const terms = LwPdfSearch.queries(searchInput.value, currentSearchOptions());
@@ -968,7 +1137,7 @@
         polygon.setAttribute("class","search-hit" + (active ? " active" : ""));
         polygon.dataset.queryIndex = String(qi);
         const title = document.createElementNS(ns,"title");
-        title.textContent = hit.query + " · 第 " + hit.occurrence + " 处 · " + matchLabel(hit);
+        title.textContent = hit.query + t(" · 第 ") + hit.occurrence + t(" 处 · ") + matchLabel(hit);
         polygon.appendChild(title); overlay.appendChild(polygon);
         if (active) {
           const label = document.createElementNS(ns,"text");
@@ -988,45 +1157,48 @@
     const complete = Boolean(lastResults && (lastResults.schema_version !== 2 ||
       lastResults.document.status === "complete"));
     searchSummary.hidden = !terms.length;
+    const queryOpen = new Map(Array.from(searchResultsNode.children, node => [node.dataset.query, node.open]));
     searchResultsNode.replaceChildren();
     const results = LwPdfSearch.search(pages, terms, options);
     if (lastResults) lastResults.search = {schema_version:1, options, complete,
       processed_pages:pages.map(p=>p.page_number), page_count:count, results};
-    searchCoverage.textContent = !lastResults ? "等待识别 · " + terms.length + " 个字符串" :
-      "已检查 " + pages.length + " / " + count + " 页 · " +
-      (complete ? "全部页面已完成" : "结果尚不完整，未处理页面尚未检查") +
-      (lastResults.options && lastResults.options.pdf_mode === "text" ? " · 仅检索文字层，未检查扫描图" : "") +
-      " · OCR 分数来自模型，不能视为正确率保证。";
+    searchCoverage.textContent = !lastResults ? t("等待识别 · {0} 个字符串", terms.length) :
+      t("已检查 {0} / {1} 页 · ", pages.length, count) +
+      (complete ? t("全部页面已完成") : t("结果尚不完整，未处理页面尚未检查")) +
+      (lastResults.options && lastResults.options.pdf_mode === "text" ? t(" · 仅检索文字层，未检查扫描图") : "") +
+      t(" · OCR 分数来自模型，不能视为正确率保证。");
     results.forEach((result,qi) => {
       const details = document.createElement("details");
-      details.className = "query-result"; details.open = true;
+      details.className = "query-result"; details.dataset.query = result.query;
+      details.open = queryOpen.get(result.query) !== false;
       const heading = document.createElement("summary");
       heading.textContent = result.query + " — " + (result.count ?
-        result.count + " 处 / " + result.pages.length + " 页" :
-        !lastResults ? "待检查" : complete ? "未找到" : "已检查页面未找到");
+        t("{0} 处 / {1} 页", result.count, result.pages.length) :
+        !lastResults ? t("待检查") : complete ? t("未找到") : t("已检查页面未找到"));
       if (!result.count) heading.className = "not-found";
       details.appendChild(heading);
       for (const page of result.pages) {
         const label = document.createElement("p"); label.className = "query-page";
-        label.textContent = "第 " + page.page_number + " 页 · " + page.count + " 处";
+        label.textContent = t("第 {0} 页 · {1} 处", page.page_number, page.count);
         details.appendChild(label);
         result.matches.forEach((hit,hi) => {
           if (hit.page_number !== page.page_number) return;
           const button = document.createElement("button"); button.type = "button";
           button.className = "query-hit"; button.disabled = running;
-          button.textContent = "第 " + hit.occurrence + " 处 · " + matchLabel(hit) + "\n" + hit.context;
+          button.classList.toggle("active", !!selectedMatch && selectedMatch.qi === qi && selectedMatch.hi === hi);
+          button.textContent = t("第 {0} 处 · {1}", hit.occurrence, matchLabel(hit)) + "\n" + hit.context;
           button.addEventListener("click", async () => {
             if (running || pdfPreviewRunning) return;
             selectedMatch = {qi,hi};
             try {
               if (source && source.kind === "pdf" && source.currentPage !== hit.page_number)
                 await renderPdfPreview(hit.page_number);
-              setMobilePanel("image"); setOverlayVisible(true); drawSearchHighlights();
+              setMobilePanel("image"); setRegionOpen("preview", true); setOverlayVisible(true); drawSearchHighlights();
               searchResultsNode.querySelectorAll(".query-hit").forEach(b=>b.classList.remove("active"));
               button.classList.add("active");
               canvas.scrollIntoView({behavior:"smooth",block:"center"});
-              statusNode.textContent = "第 " + hit.page_number + " 页 · " + hit.query + " · " + matchLabel(hit);
-            } catch (error) { statusNode.textContent = "定位失败：" + error; }
+              setStatus(() => t("第 {0} 页 · {1} · {2}", hit.page_number, hit.query, matchLabel(hit)));
+            } catch (error) { setStatus(() => t("定位失败：") + error); }
           });
           details.appendChild(button);
         });
@@ -1048,7 +1220,7 @@
   cameraInput.addEventListener("change", event =>
     selectFile(event.target.files[0] || null).catch(() => {}));
   clsInput.addEventListener("change", () => reconfigureCls().catch(error => {
-    statusNode.textContent = "切换 CLS 失败：" + error;
+    setStatus(() => t("切换 CLS 失败：") + error);
   }));
   ["dragenter", "dragover"].forEach(type => dropzone.addEventListener(type, event => {
     event.preventDefault();
@@ -1071,19 +1243,19 @@
   pdfPrev.addEventListener("click", () => navigatePdf(-1).catch(console.error));
   pdfNext.addEventListener("click", () => navigatePdf(1).catch(console.error));
   copyTextButton.addEventListener("click", () => copyPlainText().catch(error => {
-    statusNode.textContent = "复制失败：" + error;
+    setStatus(() => t("复制失败：") + error);
   }));
   shareResultButton.addEventListener("click", () => shareResult().catch(error => {
-    if (error.name !== "AbortError") statusNode.textContent = "分享失败：" + error;
+    if (error.name !== "AbortError") setStatus(() => t("分享失败：") + error);
   }));
   exportTxtButton.addEventListener("click", exportTxt);
   exportJsonButton.addEventListener("click", exportJson);
   toggleOverlayButton.addEventListener("click", () => setOverlayVisible(!overlayVisible));
   copyPdfDiagnosticsButton.addEventListener("click", () =>
     copyTextValue(pdfDiagnosticsText.textContent).then(() => {
-      statusNode.textContent = "PDF 诊断信息已复制。";
+      setStatus(() => t("PDF 诊断信息已复制。"));
     }).catch(error => {
-      statusNode.textContent = "复制诊断信息失败：" + error;
+      setStatus(() => t("复制诊断信息失败：") + error);
     }));
   showImageButton.addEventListener("click", () => setMobilePanel("image"));
   showResultsButton.addEventListener("click", () => setMobilePanel("results"));
@@ -1107,21 +1279,21 @@
     apiVersion: 1,
     ready: async () => {
       await enginePromise;
-      if (!engine) throw new Error("OCR 引擎初始化失败");
+      if (!engine) throw new Error(t("OCR 引擎初始化失败"));
     },
     selectImage: async file => {
       if (file && sourceKind(file) !== "image") {
-        throw new LwPpocr.Error("selectImage() 仅接受图片", "LW_OCR_DECODE", "decode");
+        throw new LwPpocr.Error(t("selectImage() 仅接受图片"), "LW_OCR_DECODE", "decode");
       }
       return selectFile(file);
     },
     recognize: async (file, options = {}) => {
       await window.lwPpocrDemo.ready();
       if (running) {
-        throw new LwPpocr.Error("OCR 实例正忙，请等待当前识别完成", "LW_OCR_BUSY", "busy");
+        throw new LwPpocr.Error(t("OCR 实例正忙，请等待当前识别完成"), "LW_OCR_BUSY", "busy");
       }
       if (file && sourceKind(file) !== "image") {
-        throw new LwPpocr.Error("recognize() 仅接受图片", "LW_OCR_DECODE", "decode");
+        throw new LwPpocr.Error(t("recognize() 仅接受图片"), "LW_OCR_DECODE", "decode");
       }
       if (typeof options.useCls === "boolean" && options.useCls !== clsInput.checked) {
         clsInput.checked = options.useCls;
@@ -1132,7 +1304,7 @@
       }
       if (file) await selectFile(file);
       if (!source || source.kind !== "image" || !preparedSource) {
-        throw new LwPpocr.Error("请先选择图片", "LW_OCR_INPUT_REQUIRED", "decode");
+        throw new LwPpocr.Error(t("请先选择图片"), "LW_OCR_INPUT_REQUIRED", "decode");
       }
       return runImageOcr();
     },
@@ -1153,7 +1325,10 @@
     runOcr,
     cancelPdfOcr,
     refreshSearch,
-    renderPdfPreview
+    renderPdfPreview,
+    openPreview,
+    closePreview,
+    changeZoom
   };
   window.addEventListener("beforeunload", () => {
     if (source && source.kind === "pdf") source.document.close();
@@ -1163,8 +1338,9 @@
   enginePromise = createEngine().catch(error => {
     engine = null;
     if (window.__lwOcrBootStatus) window.__lwOcrBootStatus.finish();
-    statsNode.textContent = "引擎加载失败";
-    statusNode.textContent = "WASM 初始化失败：" + error;
+    statsNode.textContent = t("引擎加载失败");
+    statsNode.dataset.i18n = "引擎加载失败";
+    setStatus(() => t("WASM 初始化失败：") + error);
     document.dispatchEvent(new CustomEvent("lwppocr:error", {
       detail: {phase: "initialize", message: String(error)}
     }));

@@ -303,17 +303,10 @@ def main() -> int:
         assert second_paste["runCount"] == pasted_after_ocr["runCount"]
 
         # The same file remains a desktop two-panel tool and a phone-friendly
-        # camera/gallery experience. The sponsor QR is intentionally visible.
+        # camera/gallery experience. The support card has been removed.
         page.set_viewport_size({"width": 390, "height": 844})
         assert page.locator(".mobile-source-actions").is_visible()
-        assert page.locator("#support").get_attribute("open") is not None
-        sponsor_image = page.locator("#support img")
-        assert sponsor_image.is_visible()
-        sponsor_box = sponsor_image.bounding_box()
-        assert sponsor_box is not None and sponsor_box["width"] >= 112, sponsor_box
-        assert sponsor_image.get_attribute("src").startswith(
-            "data:image/jpeg;base64,"
-        )
+        assert page.locator("#support").count() == 0
         run_box = page.locator("#run").bounding_box()
         assert run_box is not None and run_box["height"] >= 44, run_box
         assert page.evaluate(
