@@ -297,6 +297,71 @@ def main() -> int:
             assert json_path is not None
             assert json.loads(Path(json_path).read_text(encoding="utf-8")) == result
 
+            # UI preferences, collapsible cards, scroll bounds and a shared
+            # fullscreen preview must preserve the completed OCR result.
+            for language, title in [
+                ("en", "Offline PDF Search"), ("ja", "オフライン PDF 検索"),
+                ("th", "ค้นหา PDF แบบออฟไลน์"), ("zh-CN", "离线 PDF 检索工作台"),
+            ]:
+                page.locator("#language").select_option(language)
+                assert page.locator("html").get_attribute("lang") == language
+                assert page.locator("header h1").inner_text() == title
+                assert page.evaluate("window.__lwOcrTest.structuredResult()") == result
+            page.locator("#theme-toggle").click()
+            assert page.locator("html").get_attribute("data-theme") == "dark"
+            page.locator("#language").select_option("en")
+            assert page.locator("#theme-toggle").inner_text() == "Light theme"
+            page.locator("#language").select_option("zh-CN")
+            page.locator("#theme-toggle").click()
+            assert page.locator("html").get_attribute("data-theme") == "light"
+            for region in ["source-region", "search-controls-region", "pdf-controls", "status-region"]:
+                summary = page.locator("#" + region + " > summary")
+                summary.click()
+                assert page.locator("#" + region).get_attribute("open") is None
+                summary.click()
+                assert page.locator("#" + region).get_attribute("open") is not None
+            for name in ["preview", "results"]:
+                page.locator("#" + name + "-collapse").click()
+                assert page.locator("#" + name + "-content").is_hidden()
+                page.locator("#" + name + "-collapse").click()
+                assert page.locator("#" + name + "-content").is_visible()
+            assert page.evaluate("""() => {
+                const outer = document.querySelector('.result-card').getBoundingClientRect();
+                const inner = document.querySelector('#results').getBoundingClientRect();
+                return Math.abs(outer.bottom - inner.bottom - 1) < 2;
+            }""")
+            assert page.locator("#pdf-progress-bar").get_attribute("aria-valuenow") == "2"
+            assert page.locator("#pdf-progress-bar").get_attribute("aria-valuemax") == "2"
+            assert page.locator("#pdf-progress").is_visible()
+            assert page.locator("#pdf-progress").get_attribute("data-running") == "false"
+            page.locator("#zoom-in").click()
+            assert page.locator("#zoom-label").inner_text() == "125%"
+            page.locator("#preview-fullscreen").click()
+            assert page.locator("#preview-dialog").is_visible()
+            assert page.locator("#preview-dialog #canvas").count() == 1
+            page.locator("#preview-prev").click()
+            page.wait_for_function("() => !document.querySelector('#preview-next').disabled")
+            assert page.evaluate("window.__lwOcrTest.snapshot().pdfCurrentPage") == 1
+            page.locator("#zoom-in").click()
+            assert page.locator("#zoom-label").inner_text() == "150%"
+            page.locator("#toggle-overlay").click()
+            assert page.locator("#overlay").is_visible()
+            assert page.evaluate("""() => {
+                const canvas = document.querySelector('#canvas').getBoundingClientRect();
+                const overlay = document.querySelector('#overlay').getBoundingClientRect();
+                return Math.abs(canvas.width - overlay.width) < 1 &&
+                       Math.abs(canvas.height - overlay.height) < 1;
+            }""")
+            page.locator("#preview-next").click()
+            page.wait_for_function("() => !document.querySelector('#preview-prev').disabled")
+            page.keyboard.press("Escape")
+            assert page.locator("#preview-dialog").is_hidden()
+            assert page.locator("#preview-region #canvas").count() == 1
+            page.locator("#zoom-fit").click()
+            assert page.locator("#zoom-label").inner_text() == "100%"
+            page.locator("#toggle-overlay").click()
+            assert page.evaluate("window.__lwOcrTest.structuredResult()") == result
+
             # Repeat one page after capacities are warm; the WASM heap must not
             # continue to grow for the same rendered geometry.
             page.locator("#pdf-scope").select_option("current")

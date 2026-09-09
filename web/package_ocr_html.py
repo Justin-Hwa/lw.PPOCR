@@ -18,7 +18,7 @@ def main() -> int:
     parser.add_argument("--template", type=Path, required=True)
     parser.add_argument("--sdk", type=Path, required=True)
     parser.add_argument("--ui", type=Path, required=True)
-    parser.add_argument("--sponsor", type=Path, required=True)
+    parser.add_argument("--sponsor", type=Path, help="Deprecated; retained for build compatibility.")
     parser.add_argument("--pdf-adapter", type=Path)
     parser.add_argument("--pdfjs-core", type=Path)
     parser.add_argument("--pdfjs-worker", type=Path)
@@ -83,19 +83,17 @@ def main() -> int:
 
     html = read_text(args.template)
     replacements = {
+        "__LW_I18N_JS__": read_text(args.ui.with_name("i18n.js")),
         "__LW_TEXT_RESOURCE_LICENSES__": licenses.replace("<", "\\u003c"),
         "__LW_PDF_BOOTSTRAP_JS__": pdf_bootstrap,
         "__LW_SDK_JS__": read_text(args.sdk),
         "__LW_DEMO_UI_JS__": read_text(args.ui.with_name("pdf-search.js")) + "\n" + read_text(args.ui),
-        "__LW_SPONSOR_IMAGE_BASE64__": base64.b64encode(
-            args.sponsor.read_bytes()
-        ).decode("ascii"),
     }
     for placeholder, value in replacements.items():
         html = html.replace(placeholder, value)
     if "__LW_" in html:
         raise SystemExit("unresolved HTML placeholder")
-    for name in ("__LW_PDF_BOOTSTRAP_JS__", "__LW_SDK_JS__", "__LW_DEMO_UI_JS__"):
+    for name in ("__LW_I18N_JS__", "__LW_PDF_BOOTSTRAP_JS__", "__LW_SDK_JS__", "__LW_DEMO_UI_JS__"):
         if "</script>" in replacements[name].lower():
             raise SystemExit(f"script payload {name} contains a closing script tag")
 
