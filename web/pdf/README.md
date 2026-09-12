@@ -10,6 +10,9 @@ Rotate 角度合成后重新渲染。`orientationForPage(pageNumber)` 返回缓�
 `invalidateOrientation(pageNumber)` 清除某页的方向缓存；省略页码则清除全部。
 调用方须在渲染空闲时失效缓存，并清除旧识别坐标后重新渲染。
 文字层、预览、OCR 及 `toPdfPoint()` 始终共用校正后的 viewport。
+普通 `renderPage()` 只渲染，不调用方向探测。必须显式传入
+`renderPage(n, {detectOrientation:true, cancelled:()=>false})` 才允许判断未缓存的方向。
+UI 仅在用户点击“开始识别”后的处理循环传入此选项；切换设置只清除缓存。
 
 The public adapter surface is `LwPdf` API version 1:
 

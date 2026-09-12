@@ -464,10 +464,12 @@ if (typeof Promise.withResolvers !== "function") {
               page.cleanup();
             }
           });
-          if (!orientation && typeof options.detectOrientation === "function") {
+          // 普通预览只渲染。仅调用方明确启动识别时才允许探测页面方向。
+          if (!orientation && renderOptions.detectOrientation === true && typeof options.detectOrientation === "function") {
+            const cancelled = () => closed || Boolean(renderOptions.cancelled?.());
             try {
-              const detected = await options.detectOrientation(rendered, () => closed);
-              if (closed) throw new LwPdfError("PDF 文档已经关闭", "LW_PDF_CLOSED", "render");
+              const detected = await options.detectOrientation(rendered, cancelled);
+              if (cancelled()) throw new LwPdfError("PDF 方向识别已取消", "LW_PDF_CANCELLED", "orientation");
               if (!detected || ![0,90,180,270].includes(detected.rotation))
                 throw new LwPdfError("PDF 方向参数无效", "LW_PDF_OPTIONS", "render");
               orientations.set(pageNumber,Object.freeze({...detected}));
@@ -476,7 +478,11 @@ if (typeof Promise.withResolvers !== "function") {
                 return handle.renderPage(pageNumber,renderOptions);
               }
               return Object.freeze({...rendered,orientation:orientations.get(pageNumber)});
-            } catch (error) { rendered.release(); throw error; }
+            } catch (error) {
+              rendered.release();
+              if (cancelled()) throw new LwPdfError("PDF 方向识别已取消", "LW_PDF_CANCELLED", "orientation");
+              throw error;
+            }
           }
           return rendered;
         },

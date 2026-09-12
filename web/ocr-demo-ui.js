@@ -14,6 +14,7 @@
   const PDF_MAX_PIXELS = 5000000;
   const PDF_PREVIEW_MAX_PIXELS = 3000000;
   const PDF_PREVIEW_DPI = 144;
+  const APP_BUILD = "orientation-on-run-20260912";
 
   const searchInput = document.getElementById("search-queries");
   const searchCase = document.getElementById("search-case");
@@ -33,8 +34,8 @@
   const ocrLanguage = document.getElementById("ocr-language");
   let thaiEnginePromise = null;
   let orientationEnginePromise = null;
-  async function recognizeOrientation(input) {
-    if (ocrLanguage.value === "tha+eng") return recognizeCanvas(input);
+  async function recognizeOrientation(input, language) {
+    if (language === "tha+eng") return recognizeThai(input);
     await enginePromise;
     if (!clsInput.checked) return engine.recognize(input, {readingOrder:"horizontal-ltr"});
     // 判断整页方向时关闭行级 180° 修正，否则正反两页可能得到相同文本分数。
@@ -46,6 +47,9 @@
     if (ocrLanguage.value !== "tha+eng") {
       return engine.recognize(input, {readingOrder:readingOrderInput.value});
     }
+    return recognizeThai(input);
+  }
+  async function recognizeThai(input) {
     if (!thaiEnginePromise) {
       setStatus(() => t("正在加载泰语引擎…"));
       thaiEnginePromise = LwThaiOcr.create().catch(error => {
@@ -125,6 +129,7 @@
   const previewPrev = document.getElementById("preview-prev");
   const previewNext = document.getElementById("preview-next");
   const reorientButton = document.getElementById("pdf-reorient");
+  const copyOrientationButton = document.getElementById("copy-orientation-diagnostics");
   const orientationStatus = document.getElementById("preview-orientation-status");
   let orientationCheckingPage = null;
   let zoom = 1;
@@ -195,14 +200,15 @@
     applyZoom();
   }
   function updatePreviewControls(pdf) {
-    reorientButton.hidden = orientationStatus.hidden = !pdf;
-    reorientButton.disabled = !pdf || running || pdfPreviewRunning;
+    reorientButton.hidden = copyOrientationButton.hidden = orientationStatus.hidden = !pdf;
+    reorientButton.disabled = copyOrientationButton.disabled = !pdf || running || pdfPreviewRunning;
     if (pdf) {
       const orientation = pdf.document.orientationForPage?.(pdf.currentPage);
-      let message = "";
+      let message = t("方向待识别，点击“开始识别”后自动校正");
       if (orientationCheckingPage === pdf.currentPage) message = t("正在校正第 {0} 页方向…", pdf.currentPage);
       else if (orientation?.rotation) message = t(" · 已自动顺时针旋转 {0}°", orientation.rotation).replace(/^ · /, "");
-      else if (["uncertain","unavailable"].includes(orientation?.method)) message = t("方向未确定，请确认扫描语言后重新校正");
+      else if (orientation?.method === "uncertain") message = t("方向未确定，保留原方向；可复制方向诊断");
+      else if (orientation?.method === "unavailable") message = t("方向识别失败，保留原方向；请复制方向诊断");
       else if (["vertical-layout","vertical-text"].includes(orientation?.method)) message = t("竖排模式：保留原方向");
       else if (orientation) message = t("方向已确认，无需旋转");
       orientationStatus.textContent = message;
@@ -214,6 +220,8 @@
     applyZoom();
   }
   function restorePreview() {
+    // close 事件异步到达；快速重新打开时，旧事件不能把画布移出新弹窗。
+    if (previewDialog.open) return;
     if (previewContent.parentNode !== document.getElementById("dialog-content")) return;
     endPreviewPan();
     document.getElementById("preview-region").appendChild(previewContent);
@@ -626,8 +634,10 @@
     pdfMeta.textContent = t("{0} · {1} 页", pdf.file.name || "document.pdf", pdf.pageCount);
     const orientation = pdf.document.orientationForPage?.(pdf.currentPage);
     if (orientation?.rotation) pdfMeta.textContent += t(" · 已自动顺时针旋转 {0}°", orientation.rotation);
-    if (orientation && ["uncertain","unavailable"].includes(orientation.method))
+    if (orientation?.method === "uncertain")
       pdfMeta.textContent += t(" · 方向无法确定，保留原方向");
+    if (orientation?.method === "unavailable") pdfMeta.textContent += t(" · 方向识别失败，请复制方向诊断");
+    if (!orientation) pdfMeta.textContent += t(" · 点击开始识别后校正方向");
     pdfPageLabel.textContent = pdf.currentPage + " / " + pdf.pageCount;
     pdfPrev.disabled = running || pdfPreviewRunning || pdf.currentPage <= 1;
     pdfNext.disabled = running || pdfPreviewRunning || pdf.currentPage >= pdf.pageCount;
@@ -686,6 +696,15 @@
     latestProgress = null;
     pdfProgress.hidden = true;
     await renderPdfPreview(source.currentPage);
+  }
+  function orientationDiagnostics() {
+    const pdf = source && source.kind === "pdf" ? source : null;
+    // 不包含文件名、路径、PDF 文本、检索字符串或 OCR 原文。
+    return {app_build:APP_BUILD, user_agent:navigator.userAgent || "unknown",
+      ocr_language:ocrLanguage.value, reading_order:readingOrderInput.value,
+      pdf_backend:pdfStatus()?.worker_backend || null, ocr_backend:engine?.getStatus().backend || null,
+      page_number:pdf?.currentPage || null, preview:{width:canvas.width,height:canvas.height},
+      orientation:pdf?.document.orientationForPage?.(pdf.currentPage) || null};
   }
   async function disposeSource(oldSource) {
     if (oldSource && oldSource.kind === "pdf") {
@@ -751,15 +770,30 @@
     try {
       documentHandle = await LwPdf.open(file, {
         detectOrientation: async (rendered, cancelled) => {
-          if (ocrLanguage.value !== "tha+eng" && readingOrderInput.value.startsWith("vertical"))
-            return {rotation:0,method:"vertical-layout"};
           orientationCheckingPage = rendered.pageNumber;
           updatePdfControls();
           setStatus(() => t("正在校正第 {0} 页方向…", rendered.pageNumber));
-          try { return await LwPdfOrientation.detect(rendered, recognizeOrientation, cancelled); }
-          catch (error) {
-            if (cancelled()) throw error;
-            return {rotation:0,method:"unavailable"};
+          const attempts = [];
+          const started = performance.now();
+          try {
+            // 阅读顺序只控制文字排序，不应阻止整页转正。文字层自身的竖排信息仍保留。
+            const languages = ocrLanguage.value === "tha+eng" ? ["tha+eng","ppocr"] : ["ppocr"];
+            for (const language of languages) {
+              let result;
+              try { result = await LwPdfOrientation.detect(rendered, input => recognizeOrientation(input, language), cancelled); }
+              catch (error) {
+                if (cancelled() || error.code === "LW_PDF_CANCELLED") throw error;
+                const message = String(error?.message || error);
+                const errorKind = /timed?\s*out|timeout/i.test(message) ? "timeout" :
+                  /memory|allocation|oom/i.test(message) ? "memory" :
+                  /worker|blob|script|security|csp/i.test(message) ? "worker" : "inference";
+                result = {rotation:0,method:"unavailable",error_kind:errorKind};
+              }
+              attempts.push({engine:language,...result});
+              if (!["uncertain","unavailable"].includes(result.method))
+                return {...result,engine:language,attempts,elapsed_ms:performance.now()-started};
+            }
+            return {...attempts[0],attempts,elapsed_ms:performance.now()-started};
           }
           finally { orientationCheckingPage = null; }
         }
@@ -1005,6 +1039,11 @@
       Array.from({length: pdfSource.pageCount}, (_, index) => index + 1);
     const dpi = Number(pdfDpi.value);
     const runStarted = performance.now();
+    // 失败或不确定的方向可以在下一次明确点击识别时重试，预览和翻页不会触发。
+    for (const number of pages) {
+      const orientation = pdfSource.document.orientationForPage?.(number);
+      if (["uncertain","unavailable"].includes(orientation?.method)) pdfSource.document.invalidateOrientation(number);
+    }
     let renderTotal = 0;
     let inferenceTotal = 0;
     let uiTotal = 0;
@@ -1048,12 +1087,18 @@
           const renderStarted = performance.now();
           rendered = await pdfSource.document.renderPage(pageNumber, {
             dpi,
-            maxPixels: PDF_MAX_PIXELS
+            maxPixels: PDF_MAX_PIXELS,
+            detectOrientation: true,
+            cancelled: () => pdfSource.cancelled || source !== pdfSource
           });
           const renderMilliseconds = performance.now() - renderStarted;
           renderTotal += renderMilliseconds;
           if (pdfSource.cancelled || source !== pdfSource) break;
+          // 校正后立即刷新画布，让用户在正式 OCR 完成前就能看到转正的页面。
+          drawPreview(rendered.canvas, rendered.width, rendered.height);
           updatePdfControls();
+          await nextAnimationFrame();
+          if (pdfSource.cancelled || source !== pdfSource) break;
           setStatus(() => t("正在处理第 {0} / {1} 页：读取文字 / OCR…", pageNumber, pdfSource.pageCount));
           const mode = lastResults.options.pdf_mode;
           let textLines = [], textError = null;
@@ -1314,6 +1359,11 @@
   reorientButton.addEventListener("click", () => {
     recheckPdfOrientation().catch(error => setStatus(() => t("方向校正失败：") + error));
   });
+  copyOrientationButton.addEventListener("click", () => {
+    copyTextValue(JSON.stringify(orientationDiagnostics(), null, 2))
+      .then(() => setStatus(() => t("方向诊断已复制，不包含文档内容。")))
+      .catch(error => setStatus(() => t("复制失败：") + error));
+  });
   ["dragenter", "dragover"].forEach(type => dropzone.addEventListener(type, event => {
     event.preventDefault();
     dropzone.classList.add("drag");
@@ -1405,6 +1455,7 @@
     getStatus: snapshot
   });
   window.__lwOcrTest = {
+    orientationDiagnostics,
     snapshot,
     plainTextResult,
     structuredResult: () => lastResults,

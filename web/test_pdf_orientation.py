@@ -2,7 +2,7 @@
 import argparse
 import tempfile
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright
 
 
@@ -28,6 +28,9 @@ def main():
         image=Image.open(Path(__file__).resolve().parent.parent/'tests/fixtures/thai/scan.png').convert('RGB')
         pages=[image,image.transpose(Image.Transpose.ROTATE_270),image.transpose(Image.Transpose.ROTATE_180),image.transpose(Image.Transpose.ROTATE_90)]
         pages[0].save(temp/'scan-directions.pdf','PDF',resolution=180,save_all=True,append_images=pages[1:])
+        english=Image.new('RGB',(1000,500),'white')
+        ImageDraw.Draw(english).multiline_text((45,80),'OFFLINE ORIENTATION CHECK 12345\nContract reference 987654321\nLocal document preview test',font=ImageFont.load_default(size=40),fill='black',spacing=30)
+        english.transpose(Image.Transpose.ROTATE_90).save(temp/'PRIVATE-FIXTURE.pdf','PDF',resolution=180)
         options={'headless':True}
         if args.browser_executable:options['executable_path']=str(args.browser_executable.resolve())
         browser=p.chromium.launch(**options);context=browser.new_context(offline=True);page=context.new_page()
@@ -37,31 +40,34 @@ def main():
         page.goto(args.html.resolve().as_uri());page.evaluate('lwPpocrDemo.ready()')
         page.evaluate('''() => { const original=LwPdfOrientation; window.__directions=0;
           window.LwPdfOrientation={...original,detect:async(...args)=>{window.__directions++;return original.detect(...args);}}; }''')
-        # 先以竖排导入，再切换泰语：必须使之前“不旋转”的缓存失效。
+        # 导入、翻页、弹窗、切换扫描语言只预览，不运行方向推理。
         page.locator('#reading-order').select_option('vertical-rtl')
         page.locator('#file').set_input_files(str(temp/'scan-directions.pdf'))
         page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
         page.locator('#preview-next').click()
         page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
         assert page.evaluate("document.getElementById('canvas').width < document.getElementById('canvas').height")
-        assert '竖排' in page.locator('#preview-orientation-status').inner_text()
-        calls=page.evaluate('__directions')
+        assert '开始识别' in page.locator('#preview-orientation-status').inner_text()
         page.locator('#ocr-language').select_option('tha+eng')
         page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
-        assert page.evaluate('__directions')==calls+1
-        assert page.evaluate("document.getElementById('canvas').width > document.getElementById('canvas').height")
-        assert '270°' in page.locator('#preview-orientation-status').inner_text()
-        # 返回之前访问过的页面也要重新探测，不能复用旧设置下的方向。
-        page.locator('#preview-prev').click()
+        page.evaluate('__lwOcrTest.openPreview()')
+        page.locator('#zoom-in').click()
+        page.locator('#pdf-reorient').click()
         page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
-        assert page.evaluate('__directions')==calls+2
-        print('language switch invalidates current and other cached pages')
+        page.keyboard.press('Escape')
+        assert page.evaluate('__directions')==0
+        assert page.evaluate('__lwOcrTest.structuredResult()') is None
+        assert page.evaluate('__lwOcrTest.orientationDiagnostics().orientation') is None
+        print('file selection/navigation/settings/popup/reset: zero orientation calls')
         for filename,term,method in [('text-directions.pdf','Orientation text 12345','text-layer'),('scan-directions.pdf','สัญญาเช่า','ocr-probe')]:
             page.locator('#search-queries').fill(term)
             page.locator('#file').set_input_files(str(temp/filename))
             page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
             assert page.evaluate("document.getElementById('canvas').width > document.getElementById('canvas').height")
-            page.evaluate('__lwOcrTest.runOcr()')
+            calls=page.evaluate('__directions')
+            page.locator('#run').click()
+            page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'complete'",timeout=180_000)
+            assert page.evaluate('__directions')==calls+4
             result=page.evaluate('__lwOcrTest.structuredResult()')
             rotations=[v['pdf']['orientation']['rotation'] for v in result['pages']]
             assert rotations == [0,270,180,90],rotations
@@ -79,20 +85,85 @@ def main():
             assert page.locator('#preview-dialog #overlay .search-hit.active').count()==1
             page.keyboard.press('Escape');assert page.evaluate('__directions')==calls
             print(filename,rotations,'search/coordinates/preview/cache passed')
-        # 弹窗内重试，清除旧坐标及结果，查询保留；按钮在判断期间不可重入。
+        # 重置方向也不触发推理，清除旧坐标，保留查询；下一次识别才重判。
         page.evaluate('__lwOcrTest.openPreview()')
         calls=page.evaluate('__directions')
         page.locator('#pdf-reorient').click()
-        assert page.locator('#pdf-reorient').is_disabled()
         page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
-        assert page.evaluate('__directions')==calls+1
+        assert page.evaluate('__directions')==calls
         assert page.evaluate('__lwOcrTest.structuredResult()') is None
         assert page.locator('#overlay .search-hit').count()==0
         assert page.locator('#search-queries').input_value()=='สัญญาเช่า'
-        assert '无需旋转' in page.locator('#preview-orientation-status').inner_text()
-        page.locator('#zoom-in').click()
+        assert '开始识别' in page.locator('#preview-orientation-status').inner_text()
         page.keyboard.press('Escape')
-        print('popup orientation retry clears stale results and keeps queries')
+        page.locator('#pdf-scope').select_option('current')
+        page.locator('#run').click()
+        page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'partial'",timeout=180_000)
+        assert page.evaluate('__directions')==calls+1
+        assert '无需旋转' in page.locator('#preview-orientation-status').inner_text()
+        print('reset waits for explicit recognition; current-page scope checked')
+        # 用户在探测中停止后，不进入备用引擎，也不留下错误缓存；再点击可正常运行。
+        page.evaluate("""() => { const original=LwPdfOrientation;window.__cancelOriginal=original;
+          window.LwPdfOrientation={...original,detect:async(...args)=>{
+            __lwOcrTest.cancelPdfOcr(); throw new Error('worker stopped during inference');
+          }}; }""")
+        page.locator('#pdf-reorient').click()
+        page.wait_for_function("() => !document.getElementById('run').disabled")
+        page.locator('#run').click()
+        page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
+        assert page.evaluate('__lwOcrTest.orientationDiagnostics().orientation') is None
+        assert page.evaluate('__lwOcrTest.structuredResult()') is None
+        assert '已停止' in page.locator('#pdf-progress-label').inner_text()
+        page.evaluate('window.LwPdfOrientation=window.__cancelOriginal')
+        page.locator('#run').click()
+        page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'partial'",timeout=180_000)
+        assert page.evaluate('__lwOcrTest.structuredResult().pages[0].pdf.orientation.method')=='ocr-probe'
+        print('cancel during orientation leaves no result or cache; restart succeeds')
+        # 注入主引擎低分／异常，备用引擎仍对真实图像运行；验证错误分类和诊断隐私。
+        page.locator('#pdf-mode').select_option('text')
+        for failure in ('uncertain','timeout','both-failed'):
+            page.evaluate("""kind => {
+              window.__faultOriginal=LwPdfOrientation;window.__faultCalls=0;
+              window.LwPdfOrientation={...__faultOriginal,detect:async(...args)=>{
+                __faultCalls++;
+                if(kind==='both-failed'||(__faultCalls===1&&kind==='timeout'))throw new Error('Thai OCR worker timed out');
+                if(__faultCalls===1&&kind==='uncertain')return {rotation:0,method:'uncertain',margin:0.01,candidates:[]};
+                return __faultOriginal.detect(...args);
+              }};
+            }""",failure)
+            fixture=temp/f'PRIVATE-FIXTURE-{failure}.pdf'
+            fixture.write_bytes((temp/'PRIVATE-FIXTURE.pdf').read_bytes())
+            page.locator('#file').set_input_files(str(fixture))
+            page.wait_for_function("() => !document.getElementById('run').disabled")
+            assert page.evaluate('__faultCalls')==0
+            page.locator('#run').click()
+            page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'complete'",timeout=180_000)
+            diagnostic=page.evaluate('__lwOcrTest.orientationDiagnostics()')
+            direction=diagnostic['orientation']
+            assert len(direction['attempts'])==2
+            if failure=='both-failed':
+                assert direction['method']=='unavailable'
+                assert '方向识别失败' in page.locator('#pdf-meta').inner_text()
+            else:
+                assert direction['rotation']==90 and direction['engine']=='ppocr',direction
+                assert direction['attempts'][0]['method']==('uncertain' if failure=='uncertain' else 'unavailable')
+            if failure!='uncertain':assert direction['attempts'][0]['error_kind']=='timeout'
+            assert 'PRIVATE-FIXTURE' not in str(diagnostic)
+            assert 'OFFLINE ORIENTATION' not in str(diagnostic)
+            assert 'user_agent' in diagnostic and 'app_build' in diagnostic
+            page.evaluate('window.LwPdfOrientation=window.__faultOriginal')
+            print(failure,'fallback/diagnostics passed')
+        page.locator('#run').click()
+        page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'complete'",timeout=180_000)
+        assert page.evaluate('__lwOcrTest.orientationDiagnostics().orientation.rotation')==90
+        print('failed direction is retried on the next recognition click')
+        page.locator('#ocr-language').select_option('ppocr')
+        page.wait_for_function("() => !document.getElementById('run').disabled")
+        assert page.locator('#reading-order').input_value()=='vertical-rtl'
+        page.locator('#run').click()
+        page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'complete'",timeout=180_000)
+        assert page.evaluate('__lwOcrTest.orientationDiagnostics().orientation.rotation')==90
+        print('PP-OCR reading order no longer suppresses page orientation')
         assert not network,network
         assert not errors,errors
         browser.close()

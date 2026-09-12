@@ -106,6 +106,8 @@ def main():
                 assert page.evaluate("__lwOcrTest.structuredResult().search.results[0].count") == 2
                 assert page.evaluate("__thaiCreates") == 1
                 page.locator("#ocr-language").select_option("ppocr")
+                # 切换设置会重绘原始预览；待渲染完成后恢复 PP-OCR 控件，不启动推理。
+                page.wait_for_function("() => !document.getElementById('run').disabled")
                 assert page.locator("#use-cls").is_enabled()
                 context.close()
             assert requests == [], requests

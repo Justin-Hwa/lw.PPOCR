@@ -54,19 +54,32 @@
   }
   async function detect(rendered, recognize, cancelled=()=>false) {
     const started = performance.now();
+    function checkCancelled() {
+      if (cancelled()) {
+        const error = new Error("PDF orientation check cancelled");
+        error.code = "LW_PDF_CANCELLED";
+        throw error;
+      }
+    }
+    checkCancelled();
     let lines = [];
     try { lines = await rendered.extractText(); } catch (_) { /* 无效文字层按扫描件判断。 */ }
-    const textDirection = fromText(lines);
+    checkCancelled();
+    const textDirection = lines.unreliable ? null : fromText(lines);
     if (textDirection) return {...textDirection,elapsed_ms:performance.now()-started};
     if (lines.some(line=>line.direction === "ttb")) return {rotation:0,method:"vertical-text"};
     const candidates = [];
     for (const rotation of [0,90,180,270]) {
-      if (cancelled()) throw new Error("PDF orientation check cancelled");
+      checkCancelled();
       const canvas = rotatedThumbnail(rendered.canvas,rotation);
-      try { const result = await recognize(canvas); candidates.push({rotation,...score(result.lines)}); }
+      try {
+        const result = await recognize(canvas);
+        checkCancelled();
+        candidates.push({rotation,...score(result.lines)});
+      }
       finally { canvas.width=1; canvas.height=1; }
     }
-    return {...choose(candidates),elapsed_ms:performance.now()-started};
+    return {...choose(candidates),candidates,elapsed_ms:performance.now()-started};
   }
   root.LwPdfOrientation = Object.freeze({fromText,score,choose,detect,rotatedThumbnail});
   if (typeof module !== "undefined") module.exports = root.LwPdfOrientation;
