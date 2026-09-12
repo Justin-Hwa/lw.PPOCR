@@ -70,3 +70,21 @@ PDF.js 6.3.289 CMaps and standard fonts are packaged from the exact archive and
 SHA-256 recorded in `web/vendor/pdfjs/VERSION`. Their bundled LICENSE files
 (including CMap and font licenses) are embedded verbatim as JSON in the final
 HTML (`pdf-text-resource-licenses`). They are never downloaded at runtime.
+
+
+## Offline Thai OCR extension
+
+The standalone HTML embeds Tesseract.js 7.0.0's browser worker and
+Tesseract.js-core 7.0.0's scalar/SIMD LSTM WASM cores (Apache-2.0), plus Thai and
+English traineddata from tesseract-ocr/tessdata_fast at
+`87416418657359cb625c412a48b6e1d6d41c29bd` (Apache-2.0).
+These assets are limited to the browser application; they do not change the C
+runtime, public ABI, Node package or `lw-ppocr.js` SDK.
+
+`web/prepare_thai_resources.py` records exact source URLs and SHA-256 checksums.
+The final HTML preserves full runtime, dependency and model licenses and source
+provenance as JSON in `thai-ocr-licenses`. No asset is fetched at runtime.
+
+Synthetic test fixtures in `tests/fixtures/thai` use Noto Sans Thai (SIL Open
+Font License 1.1). A font subset is embedded in the text PDF; its license is
+preserved in that directory. This font is not a UI/runtime dependency.

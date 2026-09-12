@@ -374,10 +374,16 @@ if (typeof Promise.withResolvers !== "function") {
       const pdfDocument = await loadingTask.promise;
       let closed = false;
       let activeRenderTask = null;
+      const orientations = new Map();
       lastError = null;
 
-      return Object.freeze({
+      const handle = Object.freeze({
         pageCount: pdfDocument.numPages,
+        orientationForPage(pageNumber) { return orientations.get(pageNumber) || null; },
+        invalidateOrientation(pageNumber) {
+          if (pageNumber === undefined) orientations.clear();
+          else { assertPageNumber(pageNumber, pdfDocument.numPages); orientations.delete(pageNumber); }
+        },
         async renderPage(pageNumber, renderOptions = {}) {
           if (closed) {
             throw rememberError(new LwPdfError(
@@ -400,7 +406,8 @@ if (typeof Promise.withResolvers !== "function") {
           const pixelScale = Math.sqrt(maxPixels /
             Math.max(1, baseViewport.width * baseViewport.height));
           const scale = Math.min(dpiScale, pixelScale);
-          const viewport = page.getViewport({scale});
+          const orientation = orientations.get(pageNumber);
+          const viewport = page.getViewport({scale,rotation:(page.rotate + (orientation?.rotation || 0)) % 360});
           const width = Math.max(1, Math.round(viewport.width));
           const height = Math.max(1, Math.round(viewport.height));
           const canvas = document.createElement("canvas");
@@ -425,8 +432,10 @@ if (typeof Promise.withResolvers !== "function") {
           } finally {
             activeRenderTask = null;
           }
-          return Object.freeze({
+          const rendered = Object.freeze({
             canvas,
+            pageNumber,
+            orientation:orientation || null,
             width,
             height,
             rotation: viewport.rotation,
@@ -455,6 +464,27 @@ if (typeof Promise.withResolvers !== "function") {
               page.cleanup();
             }
           });
+          // 普通预览只渲染。仅调用方明确启动识别时才允许探测页面方向。
+          if (!orientation && renderOptions.detectOrientation === true && typeof options.detectOrientation === "function") {
+            const cancelled = () => closed || Boolean(renderOptions.cancelled?.());
+            try {
+              const detected = await options.detectOrientation(rendered, cancelled);
+              if (cancelled()) throw new LwPdfError("PDF 方向识别已取消", "LW_PDF_CANCELLED", "orientation");
+              if (!detected || ![0,90,180,270].includes(detected.rotation))
+                throw new LwPdfError("PDF 方向参数无效", "LW_PDF_OPTIONS", "render");
+              orientations.set(pageNumber,Object.freeze({...detected}));
+              if (detected.rotation) {
+                rendered.release();
+                return handle.renderPage(pageNumber,renderOptions);
+              }
+              return Object.freeze({...rendered,orientation:orientations.get(pageNumber)});
+            } catch (error) {
+              rendered.release();
+              if (cancelled()) throw new LwPdfError("PDF 方向识别已取消", "LW_PDF_CANCELLED", "orientation");
+              throw error;
+            }
+          }
+          return rendered;
         },
         cancelRender() {
           if (activeRenderTask) activeRenderTask.cancel();
@@ -466,6 +496,7 @@ if (typeof Promise.withResolvers !== "function") {
           await loadingTask.destroy();
         }
       });
+      return handle;
     } catch (error) {
       if (loadingTask) {
         try { await loadingTask.destroy(); } catch (_) {}

@@ -14,6 +14,7 @@
   const PDF_MAX_PIXELS = 5000000;
   const PDF_PREVIEW_MAX_PIXELS = 3000000;
   const PDF_PREVIEW_DPI = 144;
+  const APP_BUILD = "ppocrv5-thai-20260912";
 
   const searchInput = document.getElementById("search-queries");
   const searchCase = document.getElementById("search-case");
@@ -30,6 +31,54 @@
   const runButton = document.getElementById("run");
   const clsInput = document.getElementById("use-cls");
   const readingOrderInput = document.getElementById("reading-order");
+  const ocrLanguage = document.getElementById("ocr-language");
+  let thaiEnginePromise = null;
+  let v5ThaiEnginePromise = null;
+  let orientationEnginePromise = null;
+  async function recognizeOrientation(input, language) {
+    if (language === "tha+eng") return recognizeThai(input);
+    if (language === "ppocrv5-thai") return recognizeV5Thai(input);
+    await enginePromise;
+    if (!clsInput.checked) return engine.recognize(input, {readingOrder:"horizontal-ltr"});
+    // 判断整页方向时关闭行级 180° 修正，否则正反两页可能得到相同文本分数。
+    if (!orientationEnginePromise) orientationEnginePromise = LwPpocr.create({useCls:false,maxImageSide:0})
+      .catch(error => { orientationEnginePromise=null; throw error; });
+    return (await orientationEnginePromise).recognize(input, {readingOrder:"horizontal-ltr"});
+  }
+  async function recognizeCanvas(input) {
+    if (ocrLanguage.value === "ppocrv5-thai") return recognizeV5Thai(input);
+    if (ocrLanguage.value !== "tha+eng") {
+      return engine.recognize(input, {readingOrder:readingOrderInput.value});
+    }
+    return recognizeThai(input);
+  }
+  async function recognizeV5Thai(input) {
+    if (!v5ThaiEnginePromise) {
+      setStatus(() => t("加载PP-OCRv5 Thai"));
+      v5ThaiEnginePromise = LwPpocrV5Thai.create().catch(error => {v5ThaiEnginePromise=null;throw error;});
+    }
+    const instance = await v5ThaiEnginePromise;
+    try { return await instance.recognize(input, canvas => recognizeOrientation(canvas, "ppocr")); }
+    catch(error) { instance.destroy(); v5ThaiEnginePromise=null; throw error; }
+  }
+  async function recognizeThai(input) {
+    if (!thaiEnginePromise) {
+      setStatus(() => t("正在加载泰语引擎…"));
+      thaiEnginePromise = LwThaiOcr.create().catch(error => {
+        thaiEnginePromise = null;
+        throw error;
+      });
+    }
+    const thaiEngine = await thaiEnginePromise;
+    try { return await thaiEngine.recognize(input); }
+    catch (error) { thaiEngine.destroy(); thaiEnginePromise = null; throw error; }
+  }
+  function updateOcrOptions() {
+    ocrLanguage.disabled = running || pdfPreviewRunning;
+    const disabled = running || pdfPreviewRunning || !engine || ocrLanguage.value !== "ppocr";
+    clsInput.disabled = disabled;
+    readingOrderInput.disabled = disabled;
+  }
   const statusNode = document.getElementById("status");
   const statsNode = document.getElementById("stats");
   const canvas = document.getElementById("canvas");
@@ -91,6 +140,10 @@
   const zoomFitButton = document.getElementById("zoom-fit");
   const previewPrev = document.getElementById("preview-prev");
   const previewNext = document.getElementById("preview-next");
+  const reorientButton = document.getElementById("pdf-reorient");
+  const copyOrientationButton = document.getElementById("copy-orientation-diagnostics");
+  const orientationStatus = document.getElementById("preview-orientation-status");
+  let orientationCheckingPage = null;
   let zoom = 1;
   let fitPreview = true;
   let returnFocus = null;
@@ -159,6 +212,19 @@
     applyZoom();
   }
   function updatePreviewControls(pdf) {
+    reorientButton.hidden = copyOrientationButton.hidden = orientationStatus.hidden = !pdf;
+    reorientButton.disabled = copyOrientationButton.disabled = !pdf || running || pdfPreviewRunning;
+    if (pdf) {
+      const orientation = pdf.document.orientationForPage?.(pdf.currentPage);
+      let message = t("方向待识别，点击“开始识别”后自动校正");
+      if (orientationCheckingPage === pdf.currentPage) message = t("正在校正第 {0} 页方向…", pdf.currentPage);
+      else if (orientation?.rotation) message = t(" · 已自动顺时针旋转 {0}°", orientation.rotation).replace(/^ · /, "");
+      else if (orientation?.method === "uncertain") message = t("方向未确定，保留原方向；可复制方向诊断");
+      else if (orientation?.method === "unavailable") message = t("方向识别失败，保留原方向；请复制方向诊断");
+      else if (["vertical-layout","vertical-text"].includes(orientation?.method)) message = t("竖排模式：保留原方向");
+      else if (orientation) message = t("方向已确认，无需旋转");
+      orientationStatus.textContent = message;
+    }
     document.getElementById("preview-page-nav").hidden = !pdf;
     document.getElementById("preview-page-label").textContent = pdf ? pdf.currentPage + " / " + pdf.pageCount : "0 / 0";
     previewPrev.disabled = !pdf || running || pdfPreviewRunning || pdf.currentPage <= 1;
@@ -166,6 +232,8 @@
     applyZoom();
   }
   function restorePreview() {
+    // close 事件异步到达；快速重新打开时，旧事件不能把画布移出新弹窗。
+    if (previewDialog.open) return;
     if (previewContent.parentNode !== document.getElementById("dialog-content")) return;
     endPreviewPan();
     document.getElementById("preview-region").appendChild(previewContent);
@@ -576,6 +644,12 @@
     previewTitle.textContent = pdf ? t("PDF 页面预览") : t("图像预览");
     if (!pdf) return;
     pdfMeta.textContent = t("{0} · {1} 页", pdf.file.name || "document.pdf", pdf.pageCount);
+    const orientation = pdf.document.orientationForPage?.(pdf.currentPage);
+    if (orientation?.rotation) pdfMeta.textContent += t(" · 已自动顺时针旋转 {0}°", orientation.rotation);
+    if (orientation?.method === "uncertain")
+      pdfMeta.textContent += t(" · 方向无法确定，保留原方向");
+    if (orientation?.method === "unavailable") pdfMeta.textContent += t(" · 方向识别失败，请复制方向诊断");
+    if (!orientation) pdfMeta.textContent += t(" · 点击开始识别后校正方向");
     pdfPageLabel.textContent = pdf.currentPage + " / " + pdf.pageCount;
     pdfPrev.disabled = running || pdfPreviewRunning || pdf.currentPage <= 1;
     pdfNext.disabled = running || pdfPreviewRunning || pdf.currentPage >= pdf.pageCount;
@@ -588,6 +662,8 @@
     const pdfSource = source;
     const sequence = ++previewSequence;
     pdfPreviewRunning = true;
+    updateOcrOptions();
+    fileInput.disabled = cameraInput.disabled = true;
     pdfSource.currentPage = pageNumber;
     updatePdfControls();
     runButton.disabled = true;
@@ -618,9 +694,29 @@
     } finally {
       if (rendered) rendered.release();
       pdfPreviewRunning = false;
+      updateOcrOptions();
+      fileInput.disabled = cameraInput.disabled = running;
       runButton.disabled = !(engine && source) || running;
       updatePdfControls();
     }
+  }
+  async function recheckPdfOrientation(allPages = false) {
+    if (!source || source.kind !== "pdf" || running || pdfPreviewRunning) return;
+    source.document.invalidateOrientation(allPages ? undefined : source.currentPage);
+    // 方向改变后旧的图像坐标不可复用；保留用户查询，清除旧识别结果和标注。
+    clearLastResults();
+    latestProgress = null;
+    pdfProgress.hidden = true;
+    await renderPdfPreview(source.currentPage);
+  }
+  function orientationDiagnostics() {
+    const pdf = source && source.kind === "pdf" ? source : null;
+    // 不包含文件名、路径、PDF 文本、检索字符串或 OCR 原文。
+    return {app_build:APP_BUILD, user_agent:navigator.userAgent || "unknown",
+      ocr_language:ocrLanguage.value, reading_order:readingOrderInput.value,
+      pdf_backend:pdfStatus()?.worker_backend || null, ocr_backend:engine?.getStatus().backend || null,
+      page_number:pdf?.currentPage || null, preview:{width:canvas.width,height:canvas.height},
+      orientation:pdf?.document.orientationForPage?.(pdf.currentPage) || null};
   }
   async function disposeSource(oldSource) {
     if (oldSource && oldSource.kind === "pdf") {
@@ -630,7 +726,7 @@
     }
   }
   async function selectFile(file) {
-    if (running) return null;
+    if (running || pdfPreviewRunning) return null;
     endPreviewPan();
     const sequence = ++previewSequence;
     closePreview();
@@ -684,7 +780,36 @@
     setStatus(() => t("正在打开 PDF…"));
     let documentHandle = null;
     try {
-      documentHandle = await LwPdf.open(file);
+      documentHandle = await LwPdf.open(file, {
+        detectOrientation: async (rendered, cancelled) => {
+          orientationCheckingPage = rendered.pageNumber;
+          updatePdfControls();
+          setStatus(() => t("正在校正第 {0} 页方向…", rendered.pageNumber));
+          const attempts = [];
+          const started = performance.now();
+          try {
+            // 阅读顺序只控制文字排序，不应阻止整页转正。文字层自身的竖排信息仍保留。
+            const languages = ocrLanguage.value !== "ppocr" ? [ocrLanguage.value,"ppocr"] : ["ppocr"];
+            for (const language of languages) {
+              let result;
+              try { result = await LwPdfOrientation.detect(rendered, input => recognizeOrientation(input, language), cancelled); }
+              catch (error) {
+                if (cancelled() || error.code === "LW_PDF_CANCELLED") throw error;
+                const message = String(error?.message || error);
+                const errorKind = /timed?\s*out|timeout/i.test(message) ? "timeout" :
+                  /memory|allocation|oom/i.test(message) ? "memory" :
+                  /worker|blob|script|security|csp/i.test(message) ? "worker" : "inference";
+                result = {rotation:0,method:"unavailable",error_kind:errorKind};
+              }
+              attempts.push({engine:language,...result});
+              if (!["uncertain","unavailable"].includes(result.method))
+                return {...result,engine:language,attempts,elapsed_ms:performance.now()-started};
+            }
+            return {...attempts[0],attempts,elapsed_ms:performance.now()-started};
+          }
+          finally { orientationCheckingPage = null; }
+        }
+      });
       if (sequence !== previewSequence) {
         await documentHandle.close();
         return null;
@@ -789,7 +914,8 @@
       pdf: {
         width_pt: Number(rendered.pdfWidth.toFixed(3)),
         height_pt: Number(rendered.pdfHeight.toFixed(3)),
-        rotation: rendered.rotation
+        rotation: rendered.rotation,
+        orientation: rendered.orientation || null
       },
       image: {width: rendered.width, height: rendered.height},
       timing: {
@@ -812,6 +938,10 @@
       statsNode.textContent = t("统计图片", runCount, t(status.backend === "worker" ? "后台线程" : "兼容模式"),
         prepareMilliseconds.toFixed(0), result.timing.inference_ms.toFixed(0), result.timing.total_ms.toFixed(0),
         t(result.options.use_cls ? "开启" : "关"));
+    } else if (ocrLanguage.value === "ppocrv5-thai") {
+      statsNode.textContent = t("PP-OCRv5 Thai待命");
+    } else if (ocrLanguage.value === "tha+eng") {
+      statsNode.textContent = t("泰语引擎待命");
     } else {
       statsNode.textContent = t("统计就绪", t(status.backend === "worker" ? "后台线程" : "兼容模式"),
         status.maxLineCapacity, status.maxTextCapacity, t(clsInput.checked ? "开启" : "关"));
@@ -835,7 +965,7 @@
       engine = instance;
       if (window.__lwOcrBootStatus) window.__lwOcrBootStatus.finish();
       updateStats(instance.getStatus());
-      runButton.disabled = !source;
+      runButton.disabled = !source || pdfPreviewRunning;
       setStatus(() => source ?
         t("文件已准备好，点击“开始识别”。") : t("就绪，请选择图片或 PDF。"));
       document.dispatchEvent(new CustomEvent("lwppocr:ready", {
@@ -843,8 +973,7 @@
       }));
       return instance;
     } finally {
-      clsInput.disabled = false;
-      readingOrderInput.disabled = false;
+      updateOcrOptions();
     }
   }
   async function reconfigureCls() {
@@ -866,6 +995,7 @@
     runButton.classList.toggle("stop", value && canStop);
     runButton.textContent = value && canStop ? t("停止") : t("开始识别");
     document.body.toggleAttribute("aria-busy", value);
+    updateOcrOptions();
     refreshSearch();
     updatePdfControls();
   }
@@ -876,9 +1006,7 @@
     updateProgress(0, 1, "processing");
     setStatus(() => t("正在识别，页面仍可正常操作…"));
     try {
-      const result = await engine.recognize(source.preparedCanvas, {
-        readingOrder: readingOrderInput.value
-      });
+      const result = await recognizeCanvas(source.preparedCanvas);
       const uiStarted = performance.now();
       drawResults(result.lines, result.image.width, result.image.height);
       lastResults = adaptImageResult(result);
@@ -925,6 +1053,11 @@
       Array.from({length: pdfSource.pageCount}, (_, index) => index + 1);
     const dpi = Number(pdfDpi.value);
     const runStarted = performance.now();
+    // 失败或不确定的方向可以在下一次明确点击识别时重试，预览和翻页不会触发。
+    for (const number of pages) {
+      const orientation = pdfSource.document.orientationForPage?.(number);
+      if (["uncertain","unavailable"].includes(orientation?.method)) pdfSource.document.invalidateOrientation(number);
+    }
     let renderTotal = 0;
     let inferenceTotal = 0;
     let uiTotal = 0;
@@ -935,8 +1068,9 @@
       source: pdfSource.file.name || "document.pdf",
       document: {page_count: pdfSource.pageCount, processed_pages: 0, status:"processing"},
       options: {
-        use_cls: clsInput.checked,
-        reading_order: readingOrderInput.value,
+        use_cls: ocrLanguage.value !== "ppocr" ? false : clsInput.checked,
+        reading_order: ocrLanguage.value !== "ppocr" ? "horizontal-ltr" : readingOrderInput.value,
+        ocr_language: ocrLanguage.value || "ppocr",
         pdf_dpi: dpi,
         pdf_mode: pdfMode.value,
         pdf_max_pixels: PDF_MAX_PIXELS
@@ -967,10 +1101,17 @@
           const renderStarted = performance.now();
           rendered = await pdfSource.document.renderPage(pageNumber, {
             dpi,
-            maxPixels: PDF_MAX_PIXELS
+            maxPixels: PDF_MAX_PIXELS,
+            detectOrientation: true,
+            cancelled: () => pdfSource.cancelled || source !== pdfSource
           });
           const renderMilliseconds = performance.now() - renderStarted;
           renderTotal += renderMilliseconds;
+          if (pdfSource.cancelled || source !== pdfSource) break;
+          // 校正后立即刷新画布，让用户在正式 OCR 完成前就能看到转正的页面。
+          drawPreview(rendered.canvas, rendered.width, rendered.height);
+          updatePdfControls();
+          await nextAnimationFrame();
           if (pdfSource.cancelled || source !== pdfSource) break;
           setStatus(() => t("正在处理第 {0} / {1} 页：读取文字 / OCR…", pageNumber, pdfSource.pageCount));
           const mode = lastResults.options.pdf_mode;
@@ -981,9 +1122,8 @@
           }
           const needsOcr = mode === "ocr" || (mode === "auto" &&
             (!textLines.length || textLines.unreliable || await rendered.hasRasterImages()));
-          const ocrResult = needsOcr ? await engine.recognize(rendered.canvas, {
-            readingOrder: readingOrderInput.value
-          }) : {image:{width:rendered.width,height:rendered.height}, lines:[], timing:{total_ms:0}};
+          const ocrResult = needsOcr ? await recognizeCanvas(rendered.canvas) :
+            {image:{width:rendered.width,height:rendered.height}, lines:[], timing:{total_ms:0}};
           inferenceTotal += ocrResult.timing.total_ms;
           if (source !== pdfSource) break;
           const uiStarted = performance.now();
@@ -1222,6 +1362,22 @@
   clsInput.addEventListener("change", () => reconfigureCls().catch(error => {
     setStatus(() => t("切换 CLS 失败：") + error);
   }));
+  ocrLanguage.addEventListener("change", () => {
+    updateOcrOptions();
+    if (engine) updateStats(engine.getStatus(), latestStatsResult);
+    recheckPdfOrientation(true).catch(error => setStatus(() => t("方向校正失败：") + error));
+  });
+  readingOrderInput.addEventListener("change", () => {
+    recheckPdfOrientation(true).catch(error => setStatus(() => t("方向校正失败：") + error));
+  });
+  reorientButton.addEventListener("click", () => {
+    recheckPdfOrientation().catch(error => setStatus(() => t("方向校正失败：") + error));
+  });
+  copyOrientationButton.addEventListener("click", () => {
+    copyTextValue(JSON.stringify(orientationDiagnostics(), null, 2))
+      .then(() => setStatus(() => t("方向诊断已复制，不包含文档内容。")))
+      .catch(error => setStatus(() => t("复制失败：") + error));
+  });
   ["dragenter", "dragover"].forEach(type => dropzone.addEventListener(type, event => {
     event.preventDefault();
     dropzone.classList.add("drag");
@@ -1313,6 +1469,7 @@
     getStatus: snapshot
   });
   window.__lwOcrTest = {
+    orientationDiagnostics,
     snapshot,
     plainTextResult,
     structuredResult: () => lastResults,
@@ -1331,6 +1488,8 @@
     changeZoom
   };
   window.addEventListener("beforeunload", () => {
+    if (orientationEnginePromise) orientationEnginePromise.then(instance => instance.destroy()).catch(() => {});
+    if (thaiEnginePromise) thaiEnginePromise.then(instance => instance.destroy()).catch(() => {});
     if (source && source.kind === "pdf") source.document.close();
     if (engine) engine.destroy();
     if (window.LwPdf) LwPdf.dispose();

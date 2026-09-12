@@ -260,6 +260,7 @@ def main() -> int:
             assert result["options"] == {
                 "use_cls": False,
                 "reading_order": "horizontal-ltr",
+                "ocr_language": "ppocr",
                 "pdf_dpi": 180,
                 "pdf_mode": "auto",
                 "pdf_max_pixels": 5_000_000,

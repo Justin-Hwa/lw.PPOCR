@@ -5,6 +5,8 @@ import argparse
 import base64
 from pathlib import Path
 from prepare_pdf_text_resources import load_resources
+from prepare_thai_resources import load_thai_resources
+from prepare_ppocrv5_thai import load_v5_thai_resources
 
 
 def read_text(path: Path) -> str:
@@ -51,7 +53,7 @@ def main() -> int:
     if args.no_pdf:
         pdf_bootstrap = "/* PDF support excluded by LW_WEB_PDF=OFF. */"
     else:
-        pdf_bootstrap = read_text(args.pdf_adapter.with_name("text_geometry.js")) + "\n" + read_text(args.pdf_adapter)
+        pdf_bootstrap = read_text(args.pdf_adapter.with_name("orientation.js")) + "\n" + read_text(args.pdf_adapter.with_name("text_geometry.js")) + "\n" + read_text(args.pdf_adapter)
         pdf_bootstrap = pdf_bootstrap.replace(
             "__LW_PDFJS_VERSION__", args.pdfjs_version
         )
@@ -82,7 +84,14 @@ def main() -> int:
         pdf_bootstrap = pdf_bootstrap.replace("__LW_PDFJS_TEXT_RESOURCES__", resources)
 
     html = read_text(args.template)
+    thai_assets, thai_licenses = load_thai_resources(args.output.parent / "thai-cache")
+    thai_bootstrap = read_text(args.ui.with_name("thai-ocr.js")).replace("__LW_THAI_ASSETS__", thai_assets)
+    v5_assets, v5_licenses = load_v5_thai_resources(args.output.parent / "ppocrv5-thai-cache")
     replacements = {
+        "__LW_V5_THAI_JS__": read_text(args.ui.with_name("ppocrv5-thai.js")).replace("__LW_V5_THAI_ASSETS__", v5_assets),
+        "__LW_V5_THAI_LICENSES__": v5_licenses,
+        "__LW_THAI_JS__": thai_bootstrap,
+        "__LW_THAI_LICENSES__": thai_licenses,
         "__LW_I18N_JS__": read_text(args.ui.with_name("i18n.js")),
         "__LW_TEXT_RESOURCE_LICENSES__": licenses.replace("<", "\\u003c"),
         "__LW_PDF_BOOTSTRAP_JS__": pdf_bootstrap,
@@ -93,7 +102,7 @@ def main() -> int:
         html = html.replace(placeholder, value)
     if "__LW_" in html:
         raise SystemExit("unresolved HTML placeholder")
-    for name in ("__LW_I18N_JS__", "__LW_PDF_BOOTSTRAP_JS__", "__LW_SDK_JS__", "__LW_DEMO_UI_JS__"):
+    for name in ("__LW_V5_THAI_JS__", "__LW_I18N_JS__", "__LW_THAI_JS__", "__LW_PDF_BOOTSTRAP_JS__", "__LW_SDK_JS__", "__LW_DEMO_UI_JS__"):
         if "</script>" in replacements[name].lower():
             raise SystemExit(f"script payload {name} contains a closing script tag")
 

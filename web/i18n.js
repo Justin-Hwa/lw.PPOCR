@@ -3,6 +3,33 @@
   "use strict";
   const languages = ["zh-CN", "en", "ja", "th"];
   const messages = {
+  " · 点击开始识别后校正方向": [" · 点击开始识别后校正方向", " · Orientation checked on recognition", " · 認識開始時に向きを補正", " · ตรวจทิศทางเมื่อเริ่มรู้จำ"],
+  " · 方向识别失败，请复制方向诊断": [" · 方向识别失败，请复制方向诊断", " · Orientation check failed; copy diagnostics", " · 向きの認識に失敗・診断情報をコピーしてください", " · ตรวจทิศทางไม่สำเร็จ โปรดคัดลอกข้อมูลวินิจฉัย"],
+  "方向待识别，点击“开始识别”后自动校正": ["方向待识别，点击“开始识别”后自动校正", "Orientation pending — checked when recognition starts", "「認識開始」を押すと向きを自動補正します", "จะตรวจทิศทางเมื่อกดเริ่มรู้จำ"],
+  "方向未确定，保留原方向；可复制方向诊断": ["方向未确定，保留原方向；可复制方向诊断", "Orientation uncertain; original kept. Diagnostics available.", "向きを判定できないため元の向きを維持。診断情報をコピーできます。", "ระบุทิศทางไม่ได้ ใช้ทิศทางเดิม สามารถคัดลอกข้อมูลวินิจฉัยได้"],
+  "方向识别失败，保留原方向；请复制方向诊断": ["方向识别失败，保留原方向；请复制方向诊断", "Orientation check failed; original kept. Please copy diagnostics.", "向きの認識に失敗したため元の向きを維持。診断情報をコピーしてください。", "ตรวจทิศทางไม่สำเร็จ ใช้ทิศทางเดิม โปรดคัดลอกข้อมูลวินิจฉัย"],
+  "复制方向诊断": ["复制方向诊断", "Copy orientation diagnostics", "向きの診断情報をコピー", "คัดลอกข้อมูลวินิจฉัยทิศทาง"],
+  "方向诊断已复制，不包含文档内容。": ["方向诊断已复制，不包含文档内容。", "Orientation diagnostics copied; no document content included.", "向きの診断情報をコピーしました。文書内容は含みません。", "คัดลอกข้อมูลวินิจฉัยแล้ว ไม่มีเนื้อหาเอกสาร"],
+  "重置方向": ["重置方向", "Reset orientation", "向きをリセット", "รีเซ็ตทิศทาง"],
+  "清除方向与旧识别结果，下次点击开始识别时重新判断": ["清除方向与旧识别结果，下次点击开始识别时重新判断", "Clear orientation and results; recheck on the next recognition run", "向きと以前の結果をクリアし、次の認識開始時に再判定します", "ล้างทิศทางและผลเดิม ตรวจใหม่เมื่อเริ่มรู้จำครั้งถัดไป"],
+  "重新校正方向": ["重新校正方向", "Recheck orientation", "向きを再補正", "ตรวจทิศทางอีกครั้ง"],
+  "重新判断当前页方向，旧识别结果将清除": ["重新判断当前页方向，旧识别结果将清除", "Recheck this page; previous recognition results will be cleared", "現在のページの向きを再判定し、以前の認識結果をクリアします", "ตรวจทิศทางหน้านี้อีกครั้ง ผลการรู้จำเดิมจะถูกล้าง"],
+  "方向未确定，请确认扫描语言后重新校正": ["方向未确定，请确认扫描语言后重新校正", "Orientation uncertain. Check the OCR language and retry.", "向きを判定できません。スキャン認識言語を確認して再補正してください。", "ระบุทิศทางไม่ได้ โปรดตรวจสอบภาษา OCR แล้วลองอีกครั้ง"],
+  "竖排模式：保留原方向": ["竖排模式：保留原方向", "Vertical text: original orientation kept", "縦書き：元の向きを維持", "ข้อความแนวตั้ง: ใช้ทิศทางเดิม"],
+  "方向已确认，无需旋转": ["方向已确认，无需旋转", "Orientation checked; no rotation needed", "向きを確認済み・回転不要", "ตรวจสอบทิศทางแล้ว ไม่ต้องหมุน"],
+  "方向校正失败：": ["方向校正失败：", "Orientation check failed: ", "向きの補正に失敗しました：", "ตรวจทิศทางไม่สำเร็จ: "],
+  "正在校正第 {0} 页方向…": ["正在自动校正第 {0} 页方向…", "Checking orientation of page {0}…", "{0} ページの向きを自動補正中…", "กำลังปรับทิศทางหน้า {0} อัตโนมัติ…"],
+  " · 已自动顺时针旋转 {0}°": [" · 已自动顺时针旋转 {0}°", " · Auto-rotated {0}° clockwise", " · 時計回りに {0}° 自動回転", " · หมุนตามเข็มนาฬิกา {0}° อัตโนมัติ"],
+  " · 方向无法确定，保留原方向": [" · 方向无法确定，保留原方向", " · Orientation uncertain; original kept", " · 向きを判定できないため元の向きを維持", " · ระบุทิศทางไม่ได้ ใช้ทิศทางเดิม"],
+  "PP-OCRv5 Thai模型": ["PP-OCRv5 Thai（泰语／英语）", "PP-OCRv5 Thai (Thai / English)", "PP-OCRv5 Thai（タイ語／英語）", "PP-OCRv5 Thai (ไทย / อังกฤษ)"],
+  "加载PP-OCRv5 Thai": ["正在加载 PP-OCRv5 Thai 离线模型…", "Loading offline PP-OCRv5 Thai…", "PP-OCRv5 Thai を読み込み中…", "กำลังโหลด PP-OCRv5 Thai แบบออฟไลน์…"],
+  "PP-OCRv5 Thai待命": ["PP-OCRv5 Thai · 首次识别时加载内嵌模型 · 横排识别", "PP-OCRv5 Thai · Embedded model loads on first use · Horizontal text", "PP-OCRv5 Thai · 初回認識時にモデルを読み込み · 横書き", "PP-OCRv5 Thai · โหลดโมเดลที่ฝังไว้เมื่อใช้ครั้งแรก · ข้อความแนวนอน"],
+  "扫描识别语言": ["识别模型", "OCR model", "認識モデル", "โมเดล OCR"],
+  "原有模型（中文／日文／英文）": ["PP-OCRv6（中文／日文／英文）", "PP-OCRv6 (Chinese / Japanese / English)", "PP-OCRv6（中国語／日本語／英語）", "PP-OCRv6 (จีน / ญี่ปุ่น / อังกฤษ)"],
+  "泰语＋英语": ["Tesseract（泰语／英语）", "Tesseract (Thai / English)", "Tesseract（タイ語／英語）", "Tesseract (ไทย / อังกฤษ)"],
+  "泰语识别提示": ["泰语扫描件可选择 PP-OCRv5 Thai 或 Tesseract。模型与界面语言独立；文字版 PDF 优先提取文字层。", "For Thai scans, choose PP-OCRv5 Thai or Tesseract. Model selection is independent of UI language. Text PDFs use their text layer first.", "タイ語のスキャンは PP-OCRv5 Thai または Tesseract を選択。表示言語とは独立した設定です。文字 PDF はテキスト層を優先します。", "เอกสารสแกนไทยเลือก PP-OCRv5 Thai หรือ Tesseract ได้ โมเดลแยกจากภาษาหน้าจอ PDF ที่มีข้อความจะใช้ชั้นข้อความก่อน"],
+  "正在加载泰语引擎…": ["正在加载泰语离线引擎…", "Loading offline Thai OCR…", "タイ語オフラインエンジンを読み込み中…", "กำลังโหลดเอนจิน OCR ภาษาไทยแบบออฟไลน์…"],
+  "泰语引擎待命": ["泰语＋英语 OCR · 首次识别时加载内嵌模型 · 横排识别", "Thai + English OCR · Embedded model loads on first use · Horizontal text", "タイ語＋英語 OCR · 初回認識時に内蔵モデルを読み込み · 横書き", "OCR ไทย + อังกฤษ · โหลดโมเดลที่ฝังไว้เมื่อใช้ครั้งแรก · ข้อความแนวนอน"],
   "页码": ["第 {0} / {1} 页", "Page {0} / {1}", "{0} / {1} ページ", "หน้า {0} / {1}"],
   "关": ["关闭", "Off", "オフ", "ปิด"],
   " · OCR 分数来自模型，不能视为正确率保证。": [
@@ -993,7 +1020,7 @@
     document.querySelectorAll("[data-i18n]").forEach(node => {
       node.textContent = t(node.dataset.i18n);
     });
-    for (const attribute of ["aria-label", "placeholder"]) {
+    for (const attribute of ["aria-label", "placeholder", "title"]) {
       document.querySelectorAll("[data-i18n-" + attribute + "]").forEach(node => {
         node.setAttribute(attribute, t(node.getAttribute("data-i18n-" + attribute)));
       });

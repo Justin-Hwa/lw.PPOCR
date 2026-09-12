@@ -431,7 +431,13 @@ if(EMSCRIPTEN)
             "${CMAKE_CURRENT_SOURCE_DIR}/web/ocr-demo-ui.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf-search.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/i18n.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/thai-ocr.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_thai_resources.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_ppocrv5_thai.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/ppocrv5-thai.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/ppocrv5-thai.LICENSE"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf/text_geometry.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf/orientation.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_pdf_text_resources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/package_ocr_html.py"
             ${LW_PPOCR_C_WEB_HTML_PDF_DEPENDS}
