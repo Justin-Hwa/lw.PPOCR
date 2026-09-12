@@ -52,7 +52,7 @@ def main() -> int:
     if args.no_pdf:
         pdf_bootstrap = "/* PDF support excluded by LW_WEB_PDF=OFF. */"
     else:
-        pdf_bootstrap = read_text(args.pdf_adapter.with_name("text_geometry.js")) + "\n" + read_text(args.pdf_adapter)
+        pdf_bootstrap = read_text(args.pdf_adapter.with_name("orientation.js")) + "\n" + read_text(args.pdf_adapter.with_name("text_geometry.js")) + "\n" + read_text(args.pdf_adapter)
         pdf_bootstrap = pdf_bootstrap.replace(
             "__LW_PDFJS_VERSION__", args.pdfjs_version
         )

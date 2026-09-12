@@ -4,10 +4,10 @@
 loads the PDF.js core and Worker embedded by `package_ocr_html.py`, opens a local
 `File` or `Blob`, and renders one page at a time to a Canvas.
 
-It deliberately does not import or call `LwPpocr`, define OCR result schemas,
-extract PDF text layers, or retain page bitmaps. `ocr-demo-ui.js` passes the
-returned Canvas to the unchanged image-only browser SDK and calls `release()`
-after each page.
+它不直接依赖 OCR 引擎。`ocr-demo-ui.js` 可通过 `open(file, {detectOrientation})`
+传入方向探测回调；适配器按页缓存回调返回的额外顺时针角度，并与 PDF 自带的
+Rotate 角度合成后重新渲染。`orientationForPage(pageNumber)` 返回缓存信息。
+文字层、预览、OCR 及 `toPdfPoint()` 始终共用校正后的 viewport。
 
 The public adapter surface is `LwPdf` API version 1:
 

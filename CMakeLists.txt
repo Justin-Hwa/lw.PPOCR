@@ -434,6 +434,7 @@ if(EMSCRIPTEN)
             "${CMAKE_CURRENT_SOURCE_DIR}/web/thai-ocr.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_thai_resources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf/text_geometry.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/pdf/orientation.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/prepare_pdf_text_resources.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/package_ocr_html.py"
             ${LW_PPOCR_C_WEB_HTML_PDF_DEPENDS}

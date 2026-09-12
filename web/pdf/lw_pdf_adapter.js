@@ -374,10 +374,12 @@ if (typeof Promise.withResolvers !== "function") {
       const pdfDocument = await loadingTask.promise;
       let closed = false;
       let activeRenderTask = null;
+      const orientations = new Map();
       lastError = null;
 
-      return Object.freeze({
+      const handle = Object.freeze({
         pageCount: pdfDocument.numPages,
+        orientationForPage(pageNumber) { return orientations.get(pageNumber) || null; },
         async renderPage(pageNumber, renderOptions = {}) {
           if (closed) {
             throw rememberError(new LwPdfError(
@@ -400,7 +402,8 @@ if (typeof Promise.withResolvers !== "function") {
           const pixelScale = Math.sqrt(maxPixels /
             Math.max(1, baseViewport.width * baseViewport.height));
           const scale = Math.min(dpiScale, pixelScale);
-          const viewport = page.getViewport({scale});
+          const orientation = orientations.get(pageNumber);
+          const viewport = page.getViewport({scale,rotation:(page.rotate + (orientation?.rotation || 0)) % 360});
           const width = Math.max(1, Math.round(viewport.width));
           const height = Math.max(1, Math.round(viewport.height));
           const canvas = document.createElement("canvas");
@@ -425,8 +428,10 @@ if (typeof Promise.withResolvers !== "function") {
           } finally {
             activeRenderTask = null;
           }
-          return Object.freeze({
+          const rendered = Object.freeze({
             canvas,
+            pageNumber,
+            orientation:orientation || null,
             width,
             height,
             rotation: viewport.rotation,
@@ -455,6 +460,21 @@ if (typeof Promise.withResolvers !== "function") {
               page.cleanup();
             }
           });
+          if (!orientation && typeof options.detectOrientation === "function") {
+            try {
+              const detected = await options.detectOrientation(rendered, () => closed);
+              if (closed) throw new LwPdfError("PDF 文档已经关闭", "LW_PDF_CLOSED", "render");
+              if (!detected || ![0,90,180,270].includes(detected.rotation))
+                throw new LwPdfError("PDF 方向参数无效", "LW_PDF_OPTIONS", "render");
+              orientations.set(pageNumber,Object.freeze({...detected}));
+              if (detected.rotation) {
+                rendered.release();
+                return handle.renderPage(pageNumber,renderOptions);
+              }
+              return Object.freeze({...rendered,orientation:orientations.get(pageNumber)});
+            } catch (error) { rendered.release(); throw error; }
+          }
+          return rendered;
         },
         cancelRender() {
           if (activeRenderTask) activeRenderTask.cancel();
@@ -466,6 +486,7 @@ if (typeof Promise.withResolvers !== "function") {
           await loadingTask.destroy();
         }
       });
+      return handle;
     } catch (error) {
       if (loadingTask) {
         try { await loadingTask.destroy(); } catch (_) {}
