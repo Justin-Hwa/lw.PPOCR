@@ -11,14 +11,14 @@ FIXTURES = Path(__file__).resolve().parent.parent / "tests/fixtures/thai"
 QUERIES = ["สัญญาเช่า", "จำนวนเงิน", "วันที่", "Contract", "ไม่มีคำนี้"]
 
 
-def run_case(page, source: Path, count: int, expected_source: str):
+def run_case(page, source: Path, count: int, expected_source: str, model="tha+eng"):
     page.locator("#file").set_input_files(str(source))
     page.wait_for_function("() => !document.getElementById('run').disabled")
     page.locator("#run").click()
     page.wait_for_function("() => __lwOcrTest.structuredResult()?.document.status === 'complete'", timeout=180_000)
     result = page.evaluate("__lwOcrTest.structuredResult()")
     assert result["document"]["processed_pages"] == count
-    assert result["options"]["ocr_language"] == "tha+eng"
+    assert result["options"]["ocr_language"] == model
     assert result["search"]["complete"]
     matches = result["search"]["results"]
     assert [r["count"] for r in matches] == [2*count, count, count, count, 0], matches

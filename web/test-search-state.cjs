@@ -272,3 +272,17 @@ test("泰语初始化失败保留已提取页面、报告不完整并允许重�
  assert.equal(get("ocr-language").disabled,false);
  await assert.rejects(context.__lwOcrTest.runOcr());assert.equal(thaiCreates(),2);
 });
+
+test("PP-OCRv5 Thai initialization failure does not substitute Tesseract and retries explicitly",async()=>{
+ const {context,get,thaiCreates,thaiCalls}=await setup([{text:[line("สัญญาเช่า")]},{ocr:[]}],{ocrLanguage:"ppocrv5-thai"});
+ let attempts=0;
+ context.LwPpocrV5Thai={create:async()=>{attempts++;throw new Error("V5 model initialization failed");}};
+ get("search-queries").value="สัญญาเช่า";
+ await assert.rejects(context.__lwOcrTest.runOcr(),/V5 model initialization failed/);
+ const result=context.__lwOcrTest.structuredResult();
+ assert.equal(result.options.ocr_language,"ppocrv5-thai");
+ assert.equal(result.document.status,"error");assert.equal(result.document.processed_pages,1);
+ assert.equal(result.search.complete,false);assert.equal(thaiCreates()+thaiCalls(),0);
+ await assert.rejects(context.__lwOcrTest.runOcr(),/V5 model initialization failed/);
+ assert.equal(attempts,2);assert.equal(get("ocr-language").disabled,false);
+});

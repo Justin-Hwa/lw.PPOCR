@@ -14,7 +14,7 @@
   const PDF_MAX_PIXELS = 5000000;
   const PDF_PREVIEW_MAX_PIXELS = 3000000;
   const PDF_PREVIEW_DPI = 144;
-  const APP_BUILD = "orientation-on-run-20260912";
+  const APP_BUILD = "ppocrv5-thai-20260912";
 
   const searchInput = document.getElementById("search-queries");
   const searchCase = document.getElementById("search-case");
@@ -33,9 +33,11 @@
   const readingOrderInput = document.getElementById("reading-order");
   const ocrLanguage = document.getElementById("ocr-language");
   let thaiEnginePromise = null;
+  let v5ThaiEnginePromise = null;
   let orientationEnginePromise = null;
   async function recognizeOrientation(input, language) {
     if (language === "tha+eng") return recognizeThai(input);
+    if (language === "ppocrv5-thai") return recognizeV5Thai(input);
     await enginePromise;
     if (!clsInput.checked) return engine.recognize(input, {readingOrder:"horizontal-ltr"});
     // 判断整页方向时关闭行级 180° 修正，否则正反两页可能得到相同文本分数。
@@ -44,10 +46,20 @@
     return (await orientationEnginePromise).recognize(input, {readingOrder:"horizontal-ltr"});
   }
   async function recognizeCanvas(input) {
+    if (ocrLanguage.value === "ppocrv5-thai") return recognizeV5Thai(input);
     if (ocrLanguage.value !== "tha+eng") {
       return engine.recognize(input, {readingOrder:readingOrderInput.value});
     }
     return recognizeThai(input);
+  }
+  async function recognizeV5Thai(input) {
+    if (!v5ThaiEnginePromise) {
+      setStatus(() => t("加载PP-OCRv5 Thai"));
+      v5ThaiEnginePromise = LwPpocrV5Thai.create().catch(error => {v5ThaiEnginePromise=null;throw error;});
+    }
+    const instance = await v5ThaiEnginePromise;
+    try { return await instance.recognize(input, canvas => recognizeOrientation(canvas, "ppocr")); }
+    catch(error) { instance.destroy(); v5ThaiEnginePromise=null; throw error; }
   }
   async function recognizeThai(input) {
     if (!thaiEnginePromise) {
@@ -63,7 +75,7 @@
   }
   function updateOcrOptions() {
     ocrLanguage.disabled = running || pdfPreviewRunning;
-    const disabled = running || pdfPreviewRunning || !engine || ocrLanguage.value === "tha+eng";
+    const disabled = running || pdfPreviewRunning || !engine || ocrLanguage.value !== "ppocr";
     clsInput.disabled = disabled;
     readingOrderInput.disabled = disabled;
   }
@@ -777,7 +789,7 @@
           const started = performance.now();
           try {
             // 阅读顺序只控制文字排序，不应阻止整页转正。文字层自身的竖排信息仍保留。
-            const languages = ocrLanguage.value === "tha+eng" ? ["tha+eng","ppocr"] : ["ppocr"];
+            const languages = ocrLanguage.value !== "ppocr" ? [ocrLanguage.value,"ppocr"] : ["ppocr"];
             for (const language of languages) {
               let result;
               try { result = await LwPdfOrientation.detect(rendered, input => recognizeOrientation(input, language), cancelled); }
@@ -926,6 +938,8 @@
       statsNode.textContent = t("统计图片", runCount, t(status.backend === "worker" ? "后台线程" : "兼容模式"),
         prepareMilliseconds.toFixed(0), result.timing.inference_ms.toFixed(0), result.timing.total_ms.toFixed(0),
         t(result.options.use_cls ? "开启" : "关"));
+    } else if (ocrLanguage.value === "ppocrv5-thai") {
+      statsNode.textContent = t("PP-OCRv5 Thai待命");
     } else if (ocrLanguage.value === "tha+eng") {
       statsNode.textContent = t("泰语引擎待命");
     } else {
@@ -1054,8 +1068,8 @@
       source: pdfSource.file.name || "document.pdf",
       document: {page_count: pdfSource.pageCount, processed_pages: 0, status:"processing"},
       options: {
-        use_cls: ocrLanguage.value === "tha+eng" ? false : clsInput.checked,
-        reading_order: ocrLanguage.value === "tha+eng" ? "horizontal-ltr" : readingOrderInput.value,
+        use_cls: ocrLanguage.value !== "ppocr" ? false : clsInput.checked,
+        reading_order: ocrLanguage.value !== "ppocr" ? "horizontal-ltr" : readingOrderInput.value,
         ocr_language: ocrLanguage.value || "ppocr",
         pdf_dpi: dpi,
         pdf_mode: pdfMode.value,

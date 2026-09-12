@@ -89,7 +89,7 @@ jobs:
           )
 
       - name: Run keyword search and controller regression tests
-        run: node --test web/test-pdf-search.cjs web/test-search-state.cjs web/test-thai-ocr.cjs web/test-pdf-orientation.cjs
+        run: node --test web/test-pdf-search.cjs web/test-search-state.cjs web/test-thai-ocr.cjs web/test-ppocrv5-thai.cjs web/test-pdf-orientation.cjs
 
       - name: Run browser SDK contract and memory test
         run: >-
@@ -112,6 +112,11 @@ jobs:
       - name: Run offline Thai PDF OCR test (scalar and SIMD)
         run: >-
           python web/test_thai_html.py
+          --html build-wasm/ocr-demo.html
+
+      - name: Run offline PP-OCRv5 Thai model selection test
+        run: >-
+          python web/test_ppocrv5_thai_html.py
           --html build-wasm/ocr-demo.html
 
       - name: Run offline PDF orientation test
