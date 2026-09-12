@@ -261,6 +261,8 @@
     .pdf-controls { grid-template-columns:minmax(0,.75fr) minmax(0,.9fr) minmax(0,1.7fr); gap:16px; padding:4px 18px 18px; }
     .pdf-meta, .pdf-controls > .pdf-page-nav { grid-column:1 / -1; }
     .pdf-meta { overflow-wrap:anywhere; padding-bottom:4px; }
+    .preview-orientation-status { flex:1 0 100%; color:var(--muted); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+    .preview-orientation-status[hidden] { display:none; }
     .pdf-option { min-width:0; gap:6px; font-size:13px; line-height:1.5; }
     .pdf-option select { width:100%; min-width:0; height:44px; font-size:13px; }
     .pdf-controls > .pdf-page-nav { justify-content:center; padding-top:2px; }
@@ -478,6 +480,7 @@
         <div id="preview-content">
           <div id="preview-tools" class="preview-tools">
             <button id="toggle-overlay" type="button" aria-controls="overlay" aria-pressed="true" data-i18n="隐藏标注">隐藏标注</button>
+            <button id="pdf-reorient" type="button" hidden data-i18n="重新校正方向" title="重新判断当前页方向，旧识别结果将清除" data-i18n-title="重新判断当前页方向，旧识别结果将清除">重新校正方向</button>
             <div class="pdf-page-nav" id="preview-page-nav" hidden>
               <button id="preview-prev" type="button" aria-label="上一页" data-i18n-aria-label="上一页">‹</button>
               <span id="preview-page-label">0 / 0</span>
@@ -488,6 +491,7 @@
             <button id="zoom-in" type="button" aria-label="放大" data-i18n-aria-label="放大">＋</button>
             <button id="zoom-fit" type="button" data-i18n="适合宽度">适合宽度</button></div>
             <button id="preview-fullscreen" type="button" data-i18n="全屏预览">全屏预览</button>
+            <span id="preview-orientation-status" class="preview-orientation-status" role="status" aria-live="polite" hidden></span>
           </div>
           <div id="preview-viewport" class="preview"><div class="preview-stage" id="preview-stage"><canvas id="canvas"></canvas><svg id="overlay" aria-hidden="true"></svg></div></div>
         </div>

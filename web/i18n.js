@@ -3,6 +3,12 @@
   "use strict";
   const languages = ["zh-CN", "en", "ja", "th"];
   const messages = {
+  "重新校正方向": ["重新校正方向", "Recheck orientation", "向きを再補正", "ตรวจทิศทางอีกครั้ง"],
+  "重新判断当前页方向，旧识别结果将清除": ["重新判断当前页方向，旧识别结果将清除", "Recheck this page; previous recognition results will be cleared", "現在のページの向きを再判定し、以前の認識結果をクリアします", "ตรวจทิศทางหน้านี้อีกครั้ง ผลการรู้จำเดิมจะถูกล้าง"],
+  "方向未确定，请确认扫描语言后重新校正": ["方向未确定，请确认扫描语言后重新校正", "Orientation uncertain. Check the OCR language and retry.", "向きを判定できません。スキャン認識言語を確認して再補正してください。", "ระบุทิศทางไม่ได้ โปรดตรวจสอบภาษา OCR แล้วลองอีกครั้ง"],
+  "竖排模式：保留原方向": ["竖排模式：保留原方向", "Vertical text: original orientation kept", "縦書き：元の向きを維持", "ข้อความแนวตั้ง: ใช้ทิศทางเดิม"],
+  "方向已确认，无需旋转": ["方向已确认，无需旋转", "Orientation checked; no rotation needed", "向きを確認済み・回転不要", "ตรวจสอบทิศทางแล้ว ไม่ต้องหมุน"],
+  "方向校正失败：": ["方向校正失败：", "Orientation check failed: ", "向きの補正に失敗しました：", "ตรวจทิศทางไม่สำเร็จ: "],
   "正在校正第 {0} 页方向…": ["正在自动校正第 {0} 页方向…", "Checking orientation of page {0}…", "{0} ページの向きを自動補正中…", "กำลังปรับทิศทางหน้า {0} อัตโนมัติ…"],
   " · 已自动顺时针旋转 {0}°": [" · 已自动顺时针旋转 {0}°", " · Auto-rotated {0}° clockwise", " · 時計回りに {0}° 自動回転", " · หมุนตามเข็มนาฬิกา {0}° อัตโนมัติ"],
   " · 方向无法确定，保留原方向": [" · 方向无法确定，保留原方向", " · Orientation uncertain; original kept", " · 向きを判定できないため元の向きを維持", " · ระบุทิศทางไม่ได้ ใช้ทิศทางเดิม"],
@@ -1002,7 +1008,7 @@
     document.querySelectorAll("[data-i18n]").forEach(node => {
       node.textContent = t(node.dataset.i18n);
     });
-    for (const attribute of ["aria-label", "placeholder"]) {
+    for (const attribute of ["aria-label", "placeholder", "title"]) {
       document.querySelectorAll("[data-i18n-" + attribute + "]").forEach(node => {
         node.setAttribute(attribute, t(node.getAttribute("data-i18n-" + attribute)));
       });

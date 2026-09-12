@@ -37,7 +37,25 @@ def main():
         page.goto(args.html.resolve().as_uri());page.evaluate('lwPpocrDemo.ready()')
         page.evaluate('''() => { const original=LwPdfOrientation; window.__directions=0;
           window.LwPdfOrientation={...original,detect:async(...args)=>{window.__directions++;return original.detect(...args);}}; }''')
+        # 先以竖排导入，再切换泰语：必须使之前“不旋转”的缓存失效。
+        page.locator('#reading-order').select_option('vertical-rtl')
+        page.locator('#file').set_input_files(str(temp/'scan-directions.pdf'))
+        page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
+        page.locator('#preview-next').click()
+        page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
+        assert page.evaluate("document.getElementById('canvas').width < document.getElementById('canvas').height")
+        assert '竖排' in page.locator('#preview-orientation-status').inner_text()
+        calls=page.evaluate('__directions')
         page.locator('#ocr-language').select_option('tha+eng')
+        page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
+        assert page.evaluate('__directions')==calls+1
+        assert page.evaluate("document.getElementById('canvas').width > document.getElementById('canvas').height")
+        assert '270°' in page.locator('#preview-orientation-status').inner_text()
+        # 返回之前访问过的页面也要重新探测，不能复用旧设置下的方向。
+        page.locator('#preview-prev').click()
+        page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
+        assert page.evaluate('__directions')==calls+2
+        print('language switch invalidates current and other cached pages')
         for filename,term,method in [('text-directions.pdf','Orientation text 12345','text-layer'),('scan-directions.pdf','สัญญาเช่า','ocr-probe')]:
             page.locator('#search-queries').fill(term)
             page.locator('#file').set_input_files(str(temp/filename))
@@ -61,6 +79,20 @@ def main():
             assert page.locator('#preview-dialog #overlay .search-hit.active').count()==1
             page.keyboard.press('Escape');assert page.evaluate('__directions')==calls
             print(filename,rotations,'search/coordinates/preview/cache passed')
+        # 弹窗内重试，清除旧坐标及结果，查询保留；按钮在判断期间不可重入。
+        page.evaluate('__lwOcrTest.openPreview()')
+        calls=page.evaluate('__directions')
+        page.locator('#pdf-reorient').click()
+        assert page.locator('#pdf-reorient').is_disabled()
+        page.wait_for_function("() => !document.getElementById('run').disabled",timeout=180_000)
+        assert page.evaluate('__directions')==calls+1
+        assert page.evaluate('__lwOcrTest.structuredResult()') is None
+        assert page.locator('#overlay .search-hit').count()==0
+        assert page.locator('#search-queries').input_value()=='สัญญาเช่า'
+        assert '无需旋转' in page.locator('#preview-orientation-status').inner_text()
+        page.locator('#zoom-in').click()
+        page.keyboard.press('Escape')
+        print('popup orientation retry clears stale results and keeps queries')
         assert not network,network
         assert not errors,errors
         browser.close()

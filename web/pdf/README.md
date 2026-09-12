@@ -7,6 +7,8 @@ loads the PDF.js core and Worker embedded by `package_ocr_html.py`, opens a loca
 它不直接依赖 OCR 引擎。`ocr-demo-ui.js` 可通过 `open(file, {detectOrientation})`
 传入方向探测回调；适配器按页缓存回调返回的额外顺时针角度，并与 PDF 自带的
 Rotate 角度合成后重新渲染。`orientationForPage(pageNumber)` 返回缓存信息。
+`invalidateOrientation(pageNumber)` 清除某页的方向缓存；省略页码则清除全部。
+调用方须在渲染空闲时失效缓存，并清除旧识别坐标后重新渲染。
 文字层、预览、OCR 及 `toPdfPoint()` 始终共用校正后的 viewport。
 
 The public adapter surface is `LwPdf` API version 1:

@@ -380,6 +380,10 @@ if (typeof Promise.withResolvers !== "function") {
       const handle = Object.freeze({
         pageCount: pdfDocument.numPages,
         orientationForPage(pageNumber) { return orientations.get(pageNumber) || null; },
+        invalidateOrientation(pageNumber) {
+          if (pageNumber === undefined) orientations.clear();
+          else { assertPageNumber(pageNumber, pdfDocument.numPages); orientations.delete(pageNumber); }
+        },
         async renderPage(pageNumber, renderOptions = {}) {
           if (closed) {
             throw rememberError(new LwPdfError(

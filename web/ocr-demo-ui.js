@@ -124,6 +124,9 @@
   const zoomFitButton = document.getElementById("zoom-fit");
   const previewPrev = document.getElementById("preview-prev");
   const previewNext = document.getElementById("preview-next");
+  const reorientButton = document.getElementById("pdf-reorient");
+  const orientationStatus = document.getElementById("preview-orientation-status");
+  let orientationCheckingPage = null;
   let zoom = 1;
   let fitPreview = true;
   let returnFocus = null;
@@ -192,6 +195,18 @@
     applyZoom();
   }
   function updatePreviewControls(pdf) {
+    reorientButton.hidden = orientationStatus.hidden = !pdf;
+    reorientButton.disabled = !pdf || running || pdfPreviewRunning;
+    if (pdf) {
+      const orientation = pdf.document.orientationForPage?.(pdf.currentPage);
+      let message = "";
+      if (orientationCheckingPage === pdf.currentPage) message = t("正在校正第 {0} 页方向…", pdf.currentPage);
+      else if (orientation?.rotation) message = t(" · 已自动顺时针旋转 {0}°", orientation.rotation).replace(/^ · /, "");
+      else if (["uncertain","unavailable"].includes(orientation?.method)) message = t("方向未确定，请确认扫描语言后重新校正");
+      else if (["vertical-layout","vertical-text"].includes(orientation?.method)) message = t("竖排模式：保留原方向");
+      else if (orientation) message = t("方向已确认，无需旋转");
+      orientationStatus.textContent = message;
+    }
     document.getElementById("preview-page-nav").hidden = !pdf;
     document.getElementById("preview-page-label").textContent = pdf ? pdf.currentPage + " / " + pdf.pageCount : "0 / 0";
     previewPrev.disabled = !pdf || running || pdfPreviewRunning || pdf.currentPage <= 1;
@@ -663,6 +678,15 @@
       updatePdfControls();
     }
   }
+  async function recheckPdfOrientation(allPages = false) {
+    if (!source || source.kind !== "pdf" || running || pdfPreviewRunning) return;
+    source.document.invalidateOrientation(allPages ? undefined : source.currentPage);
+    // 方向改变后旧的图像坐标不可复用；保留用户查询，清除旧识别结果和标注。
+    clearLastResults();
+    latestProgress = null;
+    pdfProgress.hidden = true;
+    await renderPdfPreview(source.currentPage);
+  }
   async function disposeSource(oldSource) {
     if (oldSource && oldSource.kind === "pdf") {
       oldSource.cancelled = true;
@@ -729,12 +753,15 @@
         detectOrientation: async (rendered, cancelled) => {
           if (ocrLanguage.value !== "tha+eng" && readingOrderInput.value.startsWith("vertical"))
             return {rotation:0,method:"vertical-layout"};
+          orientationCheckingPage = rendered.pageNumber;
+          updatePdfControls();
           setStatus(() => t("正在校正第 {0} 页方向…", rendered.pageNumber));
           try { return await LwPdfOrientation.detect(rendered, recognizeOrientation, cancelled); }
           catch (error) {
             if (cancelled()) throw error;
             return {rotation:0,method:"unavailable"};
           }
+          finally { orientationCheckingPage = null; }
         }
       });
       if (sequence !== previewSequence) {
@@ -1026,6 +1053,7 @@
           const renderMilliseconds = performance.now() - renderStarted;
           renderTotal += renderMilliseconds;
           if (pdfSource.cancelled || source !== pdfSource) break;
+          updatePdfControls();
           setStatus(() => t("正在处理第 {0} / {1} 页：读取文字 / OCR…", pageNumber, pdfSource.pageCount));
           const mode = lastResults.options.pdf_mode;
           let textLines = [], textError = null;
@@ -1278,6 +1306,13 @@
   ocrLanguage.addEventListener("change", () => {
     updateOcrOptions();
     if (engine) updateStats(engine.getStatus(), latestStatsResult);
+    recheckPdfOrientation(true).catch(error => setStatus(() => t("方向校正失败：") + error));
+  });
+  readingOrderInput.addEventListener("change", () => {
+    recheckPdfOrientation(true).catch(error => setStatus(() => t("方向校正失败：") + error));
+  });
+  reorientButton.addEventListener("click", () => {
+    recheckPdfOrientation().catch(error => setStatus(() => t("方向校正失败：") + error));
   });
   ["dragenter", "dragover"].forEach(type => dropzone.addEventListener(type, event => {
     event.preventDefault();
