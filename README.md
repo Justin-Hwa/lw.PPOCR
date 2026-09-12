@@ -2,6 +2,8 @@
 
 本 fork 在 [lxw112190/lw.PPOCR.C](https://github.com/lxw112190/lw.PPOCR.C) 上增加：文字版/扫描版 PDF、多字符串检索、逐页次数与置信度、高亮定位。
 
+扫描泰语 PDF 时，在文件设置的“扫描识别语言”选择“泰语＋英语”。泰语引擎和模型已内嵌，支持断网识别、关键词检索、逐页标注和行级置信度；文字版 PDF 优先提取文字层。
+
 **快速生成：** `python web/repack_offline_search.py` → `dist/offline-pdf-search.html`。
 
 详见 [中文使用、打包与验证说明](docs/offline-pdf-search.zh-CN.md)。下方保留上游项目说明。

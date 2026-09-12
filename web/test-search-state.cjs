@@ -22,7 +22,8 @@ async function setup(pages,opts={}) {
  const events={},storage=opts.storage||new Map();
  get("search-spaces").checked=true; get("search-queries").value="合同\n不存在";
  get("pdf-mode").value=opts.mode||"auto";get("pdf-scope").value="all";get("pdf-dpi").value="180";get("reading-order").value="horizontal-ltr";
- let ocrCalls=0,context;
+ let ocrCalls=0,thaiCalls=0,thaiCreates=0,context;
+ get("ocr-language").value=opts.ocrLanguage||"ppocr";
  const engine={getStatus:()=>({ready:true,backend:"worker"}),destroy(){},async recognize(input){
   ocrCalls++; if(opts.onOcr)opts.onOcr(context);
   return {image:{width:100,height:100},lines:input.ocr||[],timing:{total_ms:1}};
@@ -34,7 +35,10 @@ async function setup(pages,opts={}) {
  }};
  context={console:{...console,error(){}},performance,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),LwPdfSearch:Search,
   navigator:{},CustomEvent:class {constructor(name,options={}){this.type=name;this.detail=options.detail;}},
-  LwPpocr:{create:async()=>engine},LwPdf:{open:async()=>doc,getStatus:()=>({}),dispose(){}},
+  LwPpocr:{create:async()=>engine},LwThaiOcr:{create:async()=>{
+   thaiCreates++;if(opts.failThai)throw Error("Thai initialization failed");
+   return {destroy(){},async recognize(input){thaiCalls++;if(opts.onThai)opts.onThai(context);return {image:{width:100,height:100},lines:input.ocr||[],timing:{total_ms:1}};}};
+  }},LwPdf:{open:async()=>doc,getStatus:()=>({}),dispose(){}},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},
   getComputedStyle:()=>({paddingLeft:"12px",paddingRight:"12px"}),
   document:{getElementById:get,documentElement:new Element(),querySelectorAll:()=>[],body:new Element(),createElement:()=>new Element(),createElementNS:()=>new Element(),addEventListener(){},dispatchEvent(){}},
@@ -44,7 +48,7 @@ async function setup(pages,opts={}) {
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"i18n.js"),"utf8"),context);
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,"ocr-demo-ui.js"),"utf8"),context);
  await context.lwPpocrDemo.ready(); await context.__lwOcrTest.selectFile({name:"fixture.pdf",type:"application/pdf"});
- return {context,get,storage,ocrCalls:()=>ocrCalls};
+ return {context,get,storage,ocrCalls:()=>ocrCalls,thaiCalls:()=>thaiCalls,thaiCreates:()=>thaiCreates};
 }
 test("文字 PDF 不运行 OCR；所有查询显示结果；重新检索无需推理",async()=>{
  const {context,get,ocrCalls}=await setup([{text:[line("合同 合同")]}]);
@@ -228,4 +232,43 @@ test("预览拖动平移及指针捕获：松开、取消、失焦后停止，�
  viewport.listeners.pointermove(event({buttons:0}));
  assert.equal(viewport.hasPointerCapture(1),false);
  assert.equal(JSON.stringify(context.__lwOcrTest.structuredResult()),original);
+});
+
+
+test("泰语文字层保留附标并直接检索，不初始化任一 OCR 引擎",async()=>{
+ const {context,get,ocrCalls,thaiCalls,thaiCreates}=await setup([{text:[line("สัญญาเช่า สัญญาเช่า วันที่ชำระเงิน จำนวนเงิน")]}],{ocrLanguage:"tha+eng"});
+ get("search-queries").value="สัญญาเช่า\nวันที่ชำระเงิน\nจำนวนเงิน\nไม่มีคำนี้";
+ await context.__lwOcrTest.runOcr();const r=context.__lwOcrTest.structuredResult();
+ assert.deepEqual(Array.from(r.search.results,x=>x.count),[2,1,1,0]);
+ assert.equal(r.search.results[0].matches[0].confidence,null);
+ assert.equal(ocrCalls()+thaiCalls()+thaiCreates(),0);
+});
+test("泰语扫描件复用专用引擎，独立于界面语言，跨页次数和置信度保持",async()=>{
+ const {context,get,ocrCalls,thaiCalls,thaiCreates}=await setup([
+  {ocr:[line("สัญญาเช่า สัญญาเช่า","ocr",.91)]},
+  {text:[line("สัญญาเช่า")],image:true,ocr:[line("สัญญาเช่า","ocr",.85)]}
+ ],{ocrLanguage:"tha+eng",onThai:c=>{
+  assert.equal(c.document.getElementById("ocr-language").disabled,true);
+  c.LwI18n.setLanguage("ja");
+ }});
+ get("search-queries").value="สัญญาเช่า";
+ await context.__lwOcrTest.runOcr();const r=context.__lwOcrTest.structuredResult();
+ assert.equal(ocrCalls(),0);assert.equal(thaiCalls(),2);assert.equal(thaiCreates(),1);
+ assert.equal(r.options.ocr_language,"tha+eng");assert.equal(r.search.results[0].count,3);
+ assert.deepEqual(Array.from(r.search.results[0].matches,m=>m.confidence),[.91,.91,null]);
+ assert.equal(get("ocr-language").disabled,false);
+ assert.equal(get("use-cls").disabled,true);assert.equal(get("reading-order").disabled,true);
+ get("ocr-language").value="ppocr";get("ocr-language").listeners.change();
+ assert.equal(get("use-cls").disabled,false);
+ await context.__lwOcrTest.runOcr();assert.equal(ocrCalls(),2);
+});
+test("泰语初始化失败保留已提取页面、报告不完整并允许重试",async()=>{
+ const {context,get,thaiCreates}=await setup([{text:[line("สัญญาเช่า")]},{ocr:[]}],{ocrLanguage:"tha+eng",failThai:true});
+ get("search-queries").value="สัญญาเช่า";
+ await assert.rejects(context.__lwOcrTest.runOcr(),/Thai initialization failed/);
+ let r=context.__lwOcrTest.structuredResult();
+ assert.equal(r.document.status,"error");assert.equal(r.document.processed_pages,1);
+ assert.equal(r.search.complete,false);assert.equal(r.search.results[0].count,1);
+ assert.equal(get("ocr-language").disabled,false);
+ await assert.rejects(context.__lwOcrTest.runOcr());assert.equal(thaiCreates(),2);
 });

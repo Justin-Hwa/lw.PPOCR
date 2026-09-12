@@ -6,7 +6,7 @@
 
 1. 用桌面 Chrome 或 Edge 打开 `offline-pdf-search.html`，等待内嵌模型初始化。
 2. 选择一个 PDF（也支持图片），每行输入一个检索字符串。
-3. 默认处理全部页面，点击“开始识别”。
+3. 泰语扫描件先在“扫描识别语言”选择“泰语＋英语”；其他语言保留原有模型。默认处理全部页面，点击“开始识别”。
 4. 查看每个字符串的命中总数、所在页码、每页次数及每处置信度。未命中的字符串同样列出。
 5. 点击某条命中结果，跳到对应页并突出显示命中的区域。
 6. 修改字符串、大小写或空白选项即可重新检索已处理结果，不会再次运行 OCR。
@@ -25,6 +25,16 @@
 - “全屏预览”打开占满浏览器视口的模态弹窗，使用同一画布、标注和当前页，可继续缩放、翻页与显隐标注。点击关闭或按 Esc 返回原卡片。弹窗不需要浏览器全屏权限或额外窗口。
 - 识别结果与预览在桌面使用相同的卡片高度，结果区域滚动到底部；手机保留图片／结果切换。
 - 动画进度条按本次选定范围内已完成的页面数计量；图片计为 1 页。完成、停止、失败时均保留实际进度，选择新文件时清空。开启系统“减少动态效果”后停用动画。
+
+## 泰语 PDF
+
+- 文件设置新增“扫描识别语言”。选择“泰语＋英语”可识别横排印刷泰文、阿拉伯数字与英文混排；同样支持泰语图片。界面语言与扫描识别语言分别设置。
+- 有有效文字层的泰语 PDF 在自动模式下优先直接提取文字；无文字层、包含扫描图或选择“全页 OCR”时，使用内嵌 Tesseract.js 7.0.0 和 tessdata_fast 泰语／英语模型。引擎首次需要时加载，之后逐页复用。
+- 两种 WASM LSTM 内核（SIMD／标量）及模型均打包到 HTML，约 31 MB；直接以 `file://` 打开也可断网使用，不需要首次在线下载。原有 C／PP-OCR 模型及 SDK 保持原样。
+- 泰语使用横排读取，原有 PP-OCR 专用的方向分类和阅读顺序控件在此模式下禁用；切回原有模型会恢复设置。识别期间不能更改扫描语言。
+- 归一化匹配兼容泰语 `ำ` 与 `ํา` 两种 Unicode 表示，保留声调和其他附标；不会忽略不同声调或自动修正 OCR 拼写错误。
+- 泰语扫描结果的置信度取 Tesseract 的行级分数并换算为 0–1 保存，页面以百分比显示；命中框仍为来源行范围。文字层的置信度不适用。
+- 清晰测试样本也可能出现相似字误识别，导致完整关键词漏检。优先使用文字版 PDF；扫描件可尝试更高 DPI／更清晰来源，必要时复核识别全文。当前不提供手写泰语、竖排泰语或自动旋转保证。
 
 ## 处理方式
 
@@ -70,7 +80,7 @@ python web/repack_offline_search.py
 c9e8e47f4d9f13606adfdef894a1fb7d8bb250d8646a7d621ce790bd6b4f00ce
 ```
 
-首次构建会下载上游 HTML 和 `pdfjs-dist-6.3.289.tgz`；后者按仓库 `web/vendor/pdfjs/VERSION` 中的 SHA-256 严格验证。之后可以保留 `dist/release-cache/` 和 `dist/pdfjs-cache/` 在无网络的构建机复用。任一缓存校验不符会中止，绝不跳过校验。
+首次构建会下载上游 HTML 和 `pdfjs-dist-6.3.289.tgz`；后者按仓库 `web/vendor/pdfjs/VERSION` 中的 SHA-256 严格验证。之后可以保留 `dist/release-cache/` 、`dist/pdfjs-cache/` 和 `dist/thai-cache/` 在无网络的构建机复用。任一缓存校验不符会中止，绝不跳过校验。泰语依赖的固定版本、模型提交与校验和记录在 `web/prepare_thai_resources.py`，构建时一并下载并校验。
 
 ## 从 C 源码构建
 
@@ -88,7 +98,7 @@ cmake --build build-wasm --target lw-ocr-js lw-ocr-html
 无需安装浏览器的控制器/检索回归：
 
 ```bash
-node --test web/test-pdf-search.cjs web/test-search-state.cjs
+node --test web/test-pdf-search.cjs web/test-search-state.cjs web/test-thai-ocr.cjs
 ```
 
 真实 PDF.js 集成测试需要 Node.js 22+ 和开发测试依赖 `@napi-rs/canvas`（只供测试，不进入 HTML），运行：
@@ -104,8 +114,11 @@ Node 回归覆盖检索、部分结果、四种语言与主题偏好、弹窗还
 ```bash
 python web/test_ocr_html.py --html dist/offline-pdf-search.html --sample models/ppocrv6-tiny/sample.jpg
 python web/test_pdf_html.py --html dist/offline-pdf-search.html --sample models/ppocrv6-tiny/sample.jpg
+python web/test_thai_html.py --html dist/offline-pdf-search.html
 ```
+
+泰语浏览器测试从第一次打开页面就禁用网络，使用仓库内的合成泰文样本验证文字层、两页扫描件、SIMD／标量内核、英泰混排、重复命中、声调／附标、行级分数、点击定位、全屏缩放和引擎复用。不会为提高通过率修改识别结果。
 
 ## 适用边界
 
-推荐先用桌面浏览器。手机内存、超长 PDF、复杂多栏/竖排、错误的既有文字层、低分辨率扫描会影响速度、阅读顺序或召回率。本轮主要验证中英文横排；未承诺所有语言的识别精度。加密 PDF 的密码输入仍沿用上游“不支持”的界面行为。
+推荐先用桌面浏览器。手机内存、超长 PDF、复杂多栏/竖排、错误的既有文字层、低分辨率扫描会影响速度、阅读顺序或召回率。已验证中英文及泰文横排样本；不承诺任意文档的识别精度。加密 PDF 的密码输入仍沿用上游“不支持”的界面行为。

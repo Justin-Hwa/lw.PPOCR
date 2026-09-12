@@ -30,6 +30,29 @@
   const runButton = document.getElementById("run");
   const clsInput = document.getElementById("use-cls");
   const readingOrderInput = document.getElementById("reading-order");
+  const ocrLanguage = document.getElementById("ocr-language");
+  let thaiEnginePromise = null;
+  async function recognizeCanvas(input) {
+    if (ocrLanguage.value !== "tha+eng") {
+      return engine.recognize(input, {readingOrder:readingOrderInput.value});
+    }
+    if (!thaiEnginePromise) {
+      setStatus(() => t("正在加载泰语引擎…"));
+      thaiEnginePromise = LwThaiOcr.create().catch(error => {
+        thaiEnginePromise = null;
+        throw error;
+      });
+    }
+    const thaiEngine = await thaiEnginePromise;
+    try { return await thaiEngine.recognize(input); }
+    catch (error) { thaiEngine.destroy(); thaiEnginePromise = null; throw error; }
+  }
+  function updateOcrOptions() {
+    ocrLanguage.disabled = running;
+    const disabled = running || !engine || ocrLanguage.value === "tha+eng";
+    clsInput.disabled = disabled;
+    readingOrderInput.disabled = disabled;
+  }
   const statusNode = document.getElementById("status");
   const statsNode = document.getElementById("stats");
   const canvas = document.getElementById("canvas");
@@ -812,6 +835,8 @@
       statsNode.textContent = t("统计图片", runCount, t(status.backend === "worker" ? "后台线程" : "兼容模式"),
         prepareMilliseconds.toFixed(0), result.timing.inference_ms.toFixed(0), result.timing.total_ms.toFixed(0),
         t(result.options.use_cls ? "开启" : "关"));
+    } else if (ocrLanguage.value === "tha+eng") {
+      statsNode.textContent = t("泰语引擎待命");
     } else {
       statsNode.textContent = t("统计就绪", t(status.backend === "worker" ? "后台线程" : "兼容模式"),
         status.maxLineCapacity, status.maxTextCapacity, t(clsInput.checked ? "开启" : "关"));
@@ -843,8 +868,7 @@
       }));
       return instance;
     } finally {
-      clsInput.disabled = false;
-      readingOrderInput.disabled = false;
+      updateOcrOptions();
     }
   }
   async function reconfigureCls() {
@@ -866,6 +890,7 @@
     runButton.classList.toggle("stop", value && canStop);
     runButton.textContent = value && canStop ? t("停止") : t("开始识别");
     document.body.toggleAttribute("aria-busy", value);
+    updateOcrOptions();
     refreshSearch();
     updatePdfControls();
   }
@@ -876,9 +901,7 @@
     updateProgress(0, 1, "processing");
     setStatus(() => t("正在识别，页面仍可正常操作…"));
     try {
-      const result = await engine.recognize(source.preparedCanvas, {
-        readingOrder: readingOrderInput.value
-      });
+      const result = await recognizeCanvas(source.preparedCanvas);
       const uiStarted = performance.now();
       drawResults(result.lines, result.image.width, result.image.height);
       lastResults = adaptImageResult(result);
@@ -935,8 +958,9 @@
       source: pdfSource.file.name || "document.pdf",
       document: {page_count: pdfSource.pageCount, processed_pages: 0, status:"processing"},
       options: {
-        use_cls: clsInput.checked,
-        reading_order: readingOrderInput.value,
+        use_cls: ocrLanguage.value === "tha+eng" ? false : clsInput.checked,
+        reading_order: ocrLanguage.value === "tha+eng" ? "horizontal-ltr" : readingOrderInput.value,
+        ocr_language: ocrLanguage.value || "ppocr",
         pdf_dpi: dpi,
         pdf_mode: pdfMode.value,
         pdf_max_pixels: PDF_MAX_PIXELS
@@ -981,9 +1005,8 @@
           }
           const needsOcr = mode === "ocr" || (mode === "auto" &&
             (!textLines.length || textLines.unreliable || await rendered.hasRasterImages()));
-          const ocrResult = needsOcr ? await engine.recognize(rendered.canvas, {
-            readingOrder: readingOrderInput.value
-          }) : {image:{width:rendered.width,height:rendered.height}, lines:[], timing:{total_ms:0}};
+          const ocrResult = needsOcr ? await recognizeCanvas(rendered.canvas) :
+            {image:{width:rendered.width,height:rendered.height}, lines:[], timing:{total_ms:0}};
           inferenceTotal += ocrResult.timing.total_ms;
           if (source !== pdfSource) break;
           const uiStarted = performance.now();
@@ -1222,6 +1245,10 @@
   clsInput.addEventListener("change", () => reconfigureCls().catch(error => {
     setStatus(() => t("切换 CLS 失败：") + error);
   }));
+  ocrLanguage.addEventListener("change", () => {
+    updateOcrOptions();
+    if (engine) updateStats(engine.getStatus(), latestStatsResult);
+  });
   ["dragenter", "dragover"].forEach(type => dropzone.addEventListener(type, event => {
     event.preventDefault();
     dropzone.classList.add("drag");
@@ -1331,6 +1358,7 @@
     changeZoom
   };
   window.addEventListener("beforeunload", () => {
+    if (thaiEnginePromise) thaiEnginePromise.then(instance => instance.destroy()).catch(() => {});
     if (source && source.kind === "pdf") source.document.close();
     if (engine) engine.destroy();
     if (window.LwPdf) LwPdf.dispose();
